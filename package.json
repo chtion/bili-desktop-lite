@@ -1,0 +1,80 @@
+{
+  "name": "bili-desktop-lite",
+  "productName": "Bili Desktop Lite",
+  "version": "2.4.0",
+  "description": "An unofficial Bilibili desktop app with a custom interface and day/night themes.",
+  "main": "src/main.js",
+  "author": "Bili Desktop Lite",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "postinstall": "install-electron",
+    "start": "electron .",
+    "check": "node scripts/check.cjs",
+    "smoke": "electron test/native-player.cjs",
+    "pack:win": "electron-builder --win --x64",
+    "pack:dir": "electron-builder --win --x64 --dir",
+    "test:account": "electron test/sidebar-account.cjs",
+    "vendor": "node scripts/vendor.cjs",
+    "test:desktop": "electron test/fold-settings.cjs",
+    "test:features": "electron test/features-ui.cjs",
+    "test:services": "electron test/live-services.cjs"
+  },
+  "devDependencies": {
+    "artplayer": "5.4.0",
+    "artplayer-plugin-danmuku": "5.3.0",
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0",
+    "shaka-player": "5.3.5"
+  },
+  "build": {
+    "appId": "com.bilidesktop.lite",
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "artifactName": "Bili-Desktop-Lite-${version}-Setup-x64.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bili Desktop Lite",
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052"
+    },
+    "portable": {
+      "artifactName": "Bili-Desktop-Lite-${version}-Portable-x64.${ext}"
+    }
+  }
+}

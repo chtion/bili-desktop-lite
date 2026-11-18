@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src bili-app: data:; connect-src 'self' bili-app:; media-src 'self' bili-app: blob:; worker-src blob:; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>Bili Lite</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="window-tools"><span id="window-video-title"></span><button id="pin-window" class="caption-button" aria-label="置顶播放窗口" title="置顶播放窗口" aria-pressed="false" data-icon="pin" hidden></button></div>
+  <header class="topbar">
+    <form id="search-form" role="search"><span data-icon="search"></span><input id="search" aria-label="搜索视频或粘贴 BV 链接" placeholder="搜索你感兴趣的视频，或粘贴 BV 链接" autocomplete="off" maxlength="160"><kbd>Ctrl K</kbd><button type="submit" aria-label="搜索">搜索</button></form>
+    <div class="top-actions"><button id="theme-toggle" class="icon-button" title="切换昼夜主题" aria-label="切换昼夜主题" data-icon="moon"></button></div>
+  </header>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo-row"><button class="brand" data-route="home" aria-label="Bili Lite 首页"><span class="brand-symbol" data-icon="video"></span><span class="brand-name">Bili <strong>Lite</strong></span></button></div>
+    <div class="sidebar-controls"><button id="app-back" class="icon-button" data-back title="返回" aria-label="返回上一页" data-icon="back" disabled></button><button id="sidebar-toggle" class="icon-button" aria-label="收起侧栏" title="收起侧栏" aria-expanded="true" aria-controls="sidebar" data-icon="panel"></button></div>
+    <span class="nav-label">探索世界</span>
+    <nav aria-label="主导航">
+      <button data-route="home" class="nav-item active"><span data-icon="home"></span><span>发现首页</span><span class="nav-dot"></span></button>
+      <button data-route="ranking" class="nav-item"><span data-icon="fire"></span><span>热门榜单</span></button>
+    </nav>
+    <span class="nav-label second-label">我的片单</span>
+    <nav aria-label="我的片单">
+      <button data-route="bangumi" class="nav-item"><span data-icon="video"></span><span>我的追番</span></button>
+      <button data-route="saved" class="nav-item"><span data-icon="heart"></span><span>本地收藏</span><small id="saved-count">0</small></button>
+      <button data-route="history" class="nav-item"><span data-icon="history"></span><span>播放历史</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <button id="settings-button" class="sidebar-settings" aria-label="设置" title="设置"><span data-icon="settings"></span><span>设置</span></button>
+      <div class="theme-picker" aria-label="外观主题"><button data-theme-mode="light" title="白天主题" aria-label="白天主题" data-icon="sun"></button><button data-theme-mode="dark" title="夜晚主题" aria-label="夜晚主题" data-icon="moon"></button><button data-theme-mode="system" title="跟随系统" aria-label="跟随系统" data-icon="monitor"></button></div>
+      <button id="account" class="account-button" aria-label="账号信息" aria-expanded="false" aria-controls="account-panel"><span class="avatar" data-icon="user"></span><span class="account-copy"><span id="account-name">登录 B站</span><small id="account-caption">登录后查看个人资料</small></span><span class="account-chevron" data-icon="chevrons"></span></button>
+    </div>
+  </aside>
+  <main id="workspace" class="workspace" tabindex="-1"><div id="content"></div></main>
+  <section id="account-panel" class="account-panel" role="dialog" aria-label="我的账号" hidden tabindex="-1"><div id="account-content"></div></section>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <form id="settings-form">
+      <div class="settings-heading"><div><small>让 Bili Lite 更合你的习惯</small><h2 id="settings-title">设置</h2></div><button type="button" id="close-settings" class="icon-button" aria-label="关闭设置" data-icon="close"></button></div>
+      <section class="settings-section"><h3>播放偏好</h3>
+        <label class="setting-row"><span><strong>进入视频时默认网页全屏</strong><small>使用折叠屏式布局，在右侧查看简介和评论</small></span><input type="checkbox" id="pref-web-fullscreen" role="switch"></label>
+        <label class="setting-row"><span><strong>默认展开右侧详情</strong><small>播放时仍可随时收起或展开</small></span><input type="checkbox" id="pref-right-panel" role="switch"></label>
+        <label class="setting-row"><span><strong>老板键隐藏时暂停播放</strong><small>隐藏时始终静音；恢复窗口后可手动继续播放</small></span><input type="checkbox" id="pref-boss-pause" role="switch"></label>
+      </section>
+      <section class="settings-section"><h3>快捷键</h3><p class="settings-hint">点击输入框后按下组合键。快捷键在应用未聚焦时也能使用。</p>
+        <div class="shortcut-row"><label for="pref-boss-key"><strong>老板键</strong><small>隐藏 / 恢复窗口</small></label><input id="pref-boss-key" data-shortcut="bossKey" aria-label="录制老板键" readonly placeholder="未设置"><button type="button" data-clear-shortcut="pref-boss-key" class="subtle-button">清除</button></div>
+        <div class="shortcut-row"><label for="pref-pin-key"><strong>置顶播放</strong><small>视频页中切换窗口置顶</small></label><input id="pref-pin-key" data-shortcut="pinKey" aria-label="录制置顶快捷键" readonly placeholder="未设置"><button type="button" data-clear-shortcut="pref-pin-key" class="subtle-button">清除</button></div>
+        <p id="shortcut-hint" class="settings-hint">支持 Ctrl / Alt / Shift 组合，或单独的功能键；Esc 取消录制。</p>
+      </section>
+      <section class="settings-section appearance-section"><h3>外观</h3><div class="settings-themes"><button type="button" data-theme-mode="light">白天</button><button type="button" data-theme-mode="dark">夜晚</button><button type="button" data-theme-mode="system">跟随系统</button></div></section>
+      <p id="settings-error" class="settings-error" role="alert" hidden></p>
+      <div class="settings-footer"><button type="button" id="reset-settings" class="subtle-button">恢复默认</button><button type="submit" id="save-settings" class="primary-button">保存设置</button></div>
+    </form>
+  </dialog>
+  <dialog id="action-dialog" aria-label="视频互动"></dialog>
+  <button id="back-top" class="back-top" title="回到顶部" aria-label="回到顶部" data-icon="up" hidden></button>
+  <div id="toast" role="status" hidden></div>
+  <script src="icons.js"></script>
+  <script src="vendor/artplayer.js"></script>
+  <script src="vendor/shaka.js"></script>
+  <script src="vendor/danmuku.js"></script>
+  <script src="playback.js"></script>
+  <script src="panels.js"></script>
+  <script src="settings-ui.js"></script>
+  <script src="watch-layout.js"></script>
+  <script src="video-ui.js"></script>
+  <script src="shows-ui.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

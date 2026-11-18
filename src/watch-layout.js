@@ -2,7 +2,7 @@
 let webMode=false, rightPanelOpen=true;
 const navigationStack=[];
 let homeBatch=0;
-const routeKey=r=>JSON.stringify([r.name,r.bvid,r.category||0,r.keyword||'',r.order||'',r.folder||0,r.mid||0,r.episodeId||0,r.seasonId||0,r.type||1,r.status||0]);
+const routeKey=r=>JSON.stringify([r.name,r.bvid,r.category||0,r.keyword||'',r.order||'',r.folder||0,r.mid||0,r.episodeId||0,r.seasonId||0,r.type||1,r.status||0,r.finish??-1,r.searchType||'all',!!r.index,Object.entries(r.filters||{}).sort()]);
 function rememberRoute(next,replace=false) {
   if(!replace && routeKey(route)!==routeKey(next)){
     navigationStack.push({...route});if(navigationStack.length>60)navigationStack.shift();
@@ -33,6 +33,11 @@ function setRightPanel(open) {
 function setWebFullscreen(enabled) {
   webMode=enabled && route.name==='watch';
   document.documentElement.classList.toggle('web-fullscreen',webMode);
+  const controls=$('immersive-nav'),back=$('app-back'),sidebarToggle=$('sidebar-toggle');
+  controls.hidden=!webMode;
+  if(webMode&&back.parentElement!==controls)controls.prepend(back);
+  if(!webMode&&back.parentElement!==sidebarToggle.parentElement)sidebarToggle.before(back);
+  revealImmersiveSidebar(false);
   window.bili.command('web-fullscreen',webMode);
   const detail=$('video-detail'),intro=$('intro-panel'),main=document.querySelector('.watch-main');
   if(detail && intro && main) {
@@ -42,4 +47,18 @@ function setWebFullscreen(enabled) {
   }
   const button=$('toggle-web-mode');if(button){button.setAttribute('aria-pressed',String(webMode));button.innerHTML=icon('expand')+(webMode?'退出网页全屏':'网页全屏');}
 }
+function revealImmersiveSidebar(enabled) {
+  const open=webMode&&enabled;
+  const button=$('immersive-toggle');
+  button.setAttribute('aria-expanded',String(open));
+  button.setAttribute('aria-label',open?'隐藏侧栏':'显示侧栏');
+  button.title=open?'隐藏侧栏':'显示侧栏';
+  $('sidebar').inert=webMode&&!open;
+  document.documentElement.classList.toggle('immersive-sidebar-open',open);
+}
+document.addEventListener('click',event=>{
+  if(!webMode)return;
+  if(event.target.closest('#immersive-toggle'))revealImmersiveSidebar($('sidebar').inert);
+  else if(!event.target.closest('#immersive-nav, #sidebar, #account-panel, dialog'))revealImmersiveSidebar(false);
+});
 window.addEventListener('toggle-web-fullscreen',()=>setWebFullscreen(!webMode));

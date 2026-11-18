@@ -1,7 +1,7 @@
 {
   "name": "bili-desktop-lite",
   "productName": "Bili Desktop Lite",
-  "version": "2.4.0",
+  "version": "0.10.0",
   "description": "An unofficial Bilibili desktop app with a custom interface and day/night themes.",
   "main": "src/main.js",
   "author": "Bili Desktop Lite",
@@ -12,7 +12,8 @@
     "start": "electron .",
     "check": "node scripts/check.cjs",
     "smoke": "electron test/native-player.cjs",
-    "pack:win": "electron-builder --win --x64",
+    "pack:win": "electron-builder --win --x64 --publish never",
+    "postpack:win": "node scripts/release-manifest.cjs",
     "pack:dir": "electron-builder --win --x64 --dir",
     "test:account": "electron test/sidebar-account.cjs",
     "vendor": "node scripts/vendor.cjs",

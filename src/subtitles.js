@@ -11,7 +11,8 @@ function createSubtitles(apiWbi,getSession){
       const data=await apiWbi('/x/player/wbi/v2',{bvid,cid,...(episodeId?{ep_id:episodeId}:{})});
       if(Number(data.cid)!==Number(cid) || (data.aid && Number(data.aid)!==Number(aid)))throw new Error('字幕信息与当前视频不匹配，已停止加载。');
       for(const [token,t] of tracks)if(Date.now()-t.time>3600000)tracks.delete(token);
-      return {needLogin:!!data.need_login_subtitle,tracks:(data.subtitle?.subtitles||[]).flatMap(s=>{
+      const chapters=(data.view_points||[]).map(point=>({time:Number(point.from),title:String(point.content||'').slice(0,160)})).filter(point=>point.title&&Number.isFinite(point.time)&&point.time>=0).slice(0,100);
+      return {chapters,online:Number(data.online_count)||0,needLogin:!!data.need_login_subtitle,tracks:(data.subtitle?.subtitles||[]).flatMap(s=>{
         const url=subtitleURL(s.subtitle_url);if(!url)return [];
         const token=randomUUID();tracks.set(token,{url,time:Date.now()});
         return [{token,label:String(s.lan_doc||s.lan||'字幕').slice(0,50),language:String(s.lan||'').slice(0,30),ai:Number(s.ai_type)>0 || /^ai-/.test(s.lan||'')}];

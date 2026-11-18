@@ -1,6 +1,7 @@
 'use strict';
 window.icon = (name, cls = '') => {
   const paths = {
+    film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 4v16M17 4v16M3 9h4m-4 6h4m10-6h4m-4 6h4"/>',
     like: '<path d="M7 10v11H3V10h4Zm0 0 4-8c3 0 3 2 2 6h6a2 2 0 0 1 2 2l-2 9a2 2 0 0 1-2 2H7"/>',
     coin: '<circle cx="12" cy="12" r="9"/><path d="M8 8h8m-4 0v9m-4-5h8"/>',
     star: '<path d="m12 2 3 6 7 1-5 5 1 8-6-4-6 4 1-8-5-5 7-1Z"/>',

@@ -2,8 +2,44 @@
 let videoState=null,actionBusy=false,collectionPage=0,collectionItems=[],collectionBusy=false;
 function renderVideoDetail(v){
   videoState=null;actionBusy=false;collectionPage=0;collectionItems=[];collectionBusy=false;
-  $('video-detail').innerHTML=`<span class="video-category">${esc(v.kind==='episode'?'番剧 · '+v.category:v.category)}</span><h1>${esc(v.title)}</h1><div class="watch-stats">${v.kind==='episode'?'':`<span>${icon('play')}${number(v.views)} 次观看</span><span>${icon('comment')}${number(v.danmaku)} 条弹幕</span>${v.published?`<span>${new Date(v.published*1000).toLocaleDateString('zh-CN')}</span>`:''}`}</div><div class="watch-toolbar">${v.kind==='episode'?`<button class="creator" data-season="${v.seasonId}">${icon('video')}<strong>查看番剧详情</strong></button>`:`<button class="creator" data-user-space="${v.authorMid}">${v.avatar?`<img src="${esc(image(v.avatar))}" alt="">`:icon('user')}<strong>${esc(v.author)}</strong></button>`}<button id="follow-video" class="follow-button" data-video-action="${v.kind==='episode'?'show-follow':'follow'}">${v.kind==='episode'?(v.seasonFollowed?'已追番':'+ 追番'):'关注'}</button></div><div class="video-actions" id="video-actions"></div><p id="video-state-note" class="action-note" role="status"></p>${v.collection?`<button class="collection-link" data-watch-tab="parts">${icon('video')}<span>${esc(v.collection.title)}<small>${v.collection.count||v.collection.sections.reduce((n,g)=>n+g.items.length,0)} 个内容 · 查看合集 / 选集</small></span>${icon('arrow')}</button>`:''}<h2 class="description-title">简介</h2><p class="description">${esc(v.description||'这个视频还没有简介。')}</p><button class="subtle-button watch-save" data-save="${esc(v.bvid)}">${icon('heart')}本地收藏</button>`;
+  const isEpisode=v.kind==='episode';
+  const published=v.published?new Date(v.published*1000).toLocaleString('zh-CN',{hour12:false,dateStyle:'medium',timeStyle:'short'}):'';
+  const stats=isEpisode?[v.showRating&&`${esc(v.showRating)} 分`,esc(v.showUpdate)].filter(Boolean).map(text=>`<span>${text}</span>`).join(''):
+    `<span>${icon('play')}${number(v.views)} 播放</span><span>${icon('comment')}${number(v.danmaku)} 弹幕</span>${published?`<span>${esc(published)}</span>`:''}`;
+  const creator=isEpisode?`<button class="creator" data-season="${v.seasonId}">${icon('film')}<strong>番剧资料与选集</strong></button>`:
+    `<button class="creator" data-user-space="${v.authorMid}">${v.avatar?`<img src="${esc(image(v.avatar))}" alt="">`:icon('user')}<span><strong>${esc(v.author)}</strong><small id="creator-stats" hidden></small></span></button>`;
+  const collection=v.collection||v.pages.length>1;
+  const collectionTitle=v.collection?.title||'视频选集';
+  const collectionCount=v.collection?.count||v.pages.length;
+  $('video-detail').innerHTML=`
+    <span class="video-category">${esc(isEpisode?'番剧 · '+v.category:[v.category,v.original?'原创':''].filter(Boolean).join(' · '))}</span>
+    <h1>${esc(v.title)}</h1><div class="watch-stats">${stats}<span id="watch-online" hidden></span></div>
+    <div class="watch-toolbar">${creator}<button id="follow-video" class="follow-button" data-video-action="${isEpisode?'show-follow':'follow'}"></button></div>
+    <div class="video-actions" id="video-actions"></div><p id="video-state-note" class="action-note" role="status"></p>
+    ${collection?`<button class="collection-link" data-watch-tab="parts">${icon('film')}<span>${esc(collectionTitle)}<small>共 ${collectionCount} 个内容 · 查看选集</small></span>${icon('arrow')}</button>`:''}
+    <section id="chapters-area" hidden></section>
+    <h2 class="description-title">简介</h2><p class="description">${esc(v.description||'暂无简介。')}</p>
+    <div id="video-tags" class="video-tags" hidden></div>
+    <div class="watch-detail-footer"><button class="subtle-button watch-save" data-save="${esc(v.bvid)}">${icon('heart')}本地收藏</button><span id="history-sync-status" role="status"></span></div>`;
+  if(v.comments)document.querySelector('.watch-tabs [data-watch-tab=comments]').innerHTML=`评论 <small>${number(v.comments)}</small>`;
   renderVideoActions();loadVideoState();renderParts(v);
+}
+function renderVideoExtra(data) {
+  const tags=$('video-tags'),creator=$('creator-stats');
+  tags.innerHTML=data.tags.map(tag=>`<button data-video-tag="${esc(tag)}">${esc(tag)}</button>`).join('');
+  tags.hidden=!data.tags.length;
+  if(creator&&(data.fans||data.uploads)) {
+    creator.hidden=false;
+    creator.textContent=[data.fans&&`${number(data.fans)} 粉丝`,data.uploads&&`${number(data.uploads)} 投稿`].filter(Boolean).join(' · ');
+  }
+}
+function renderPlayerDetails(data) {
+  const chapters=$('chapters-area'),online=$('watch-online');
+  if(!chapters||!online)return;
+  online.textContent=data.online?`${number(data.online)} 人在看`:'';
+  online.hidden=!data.online;
+  chapters.hidden=!data.chapters?.length;
+  chapters.innerHTML=chapters.hidden?'':`<h2 class="description-title">视频章节</h2><div class="chapter-list">${data.chapters.map(chapter=>`<button data-chapter="${chapter.time}"><small>${duration(Math.floor(chapter.time))}</small><span>${esc(chapter.title)}</span>${icon('play')}</button>`).join('')}</div>`;
 }
 function renderVideoActions(){
   const v=activeVideo;if(!v||!$('video-actions'))return;

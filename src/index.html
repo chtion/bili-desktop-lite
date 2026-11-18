@@ -10,7 +10,7 @@
 <body>
   <div class="window-tools"><span id="window-video-title"></span><button id="pin-window" class="caption-button" aria-label="置顶播放窗口" title="置顶播放窗口" aria-pressed="false" data-icon="pin" hidden></button></div>
   <header class="topbar">
-    <form id="search-form" role="search"><span data-icon="search"></span><input id="search" aria-label="搜索视频或粘贴 BV 链接" placeholder="搜索你感兴趣的视频，或粘贴 BV 链接" autocomplete="off" maxlength="160"><kbd>Ctrl K</kbd><button type="submit" aria-label="搜索">搜索</button></form>
+    <form id="search-form" role="search"><span data-icon="search"></span><input id="search" aria-label="搜索视频、用户或番剧" placeholder="搜索视频、用户、番剧，或粘贴 BV 链接" autocomplete="off" maxlength="160"><kbd>Ctrl K</kbd><button type="submit" aria-label="搜索">搜索</button></form>
     <div class="top-actions"><button id="theme-toggle" class="icon-button" title="切换昼夜主题" aria-label="切换昼夜主题" data-icon="moon"></button></div>
   </header>
   <aside class="sidebar" id="sidebar">
@@ -20,6 +20,7 @@
     <nav aria-label="主导航">
       <button data-route="home" class="nav-item active"><span data-icon="home"></span><span>发现首页</span><span class="nav-dot"></span></button>
       <button data-route="ranking" class="nav-item"><span data-icon="fire"></span><span>热门榜单</span></button>
+      <button data-route="anime" class="nav-item"><span data-icon="film"></span><span>番剧探索</span></button>
     </nav>
     <span class="nav-label second-label">我的片单</span>
     <nav aria-label="我的片单">
@@ -33,6 +34,9 @@
       <button id="account" class="account-button" aria-label="账号信息" aria-expanded="false" aria-controls="account-panel"><span class="avatar" data-icon="user"></span><span class="account-copy"><span id="account-name">登录 B站</span><small id="account-caption">登录后查看个人资料</small></span><span class="account-chevron" data-icon="chevrons"></span></button>
     </div>
   </aside>
+  <div id="immersive-nav" class="immersive-nav" role="group" aria-label="播放导航" hidden>
+    <button id="immersive-toggle" class="icon-button" aria-label="显示侧栏" aria-controls="sidebar" aria-expanded="false" title="显示侧栏" data-icon="panel"></button>
+  </div>
   <main id="workspace" class="workspace" tabindex="-1"><div id="content"></div></main>
   <section id="account-panel" class="account-panel" role="dialog" aria-label="我的账号" hidden tabindex="-1"><div id="account-content"></div></section>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
@@ -49,6 +53,20 @@
         <p id="shortcut-hint" class="settings-hint">支持 Ctrl / Alt / Shift 组合，或单独的功能键；Esc 取消录制。</p>
       </section>
       <section class="settings-section appearance-section"><h3>外观</h3><div class="settings-themes"><button type="button" data-theme-mode="light">白天</button><button type="button" data-theme-mode="dark">夜晚</button><button type="button" data-theme-mode="system">跟随系统</button></div></section>
+      <section class="settings-section"><h3>播放记录</h3><label class="setting-row"><span><strong>同步到 B站播放历史</strong><small>登录后同步实际观看进度。本机续播始终可用。</small></span><input type="checkbox" id="pref-history-sync" role="switch"></label></section>
+      <section class="settings-section" id="update-section">
+        <h3>应用更新 <small id="current-version"></small></h3>
+        <p class="settings-hint">读取私有 GitHub Release 时使用本机 Git 登录。</p>
+        <p id="update-status" class="settings-hint" role="status"></p>
+        <progress id="update-progress" max="100" aria-label="更新进度" hidden></progress>
+        <details id="update-notes" hidden><summary>版本说明</summary><p></p></details>
+        <div class="update-controls">
+          <button type="button" class="secondary-button" id="check-update">检查 GitHub 更新</button>
+          <button type="button" class="subtle-button" id="update-folder">从发布文件夹检查</button>
+          <button type="button" class="primary-button" id="install-update" hidden>更新并重启</button>
+          <button type="button" class="secondary-button" id="cancel-update" hidden>取消下载</button>
+        </div>
+      </section>
       <p id="settings-error" class="settings-error" role="alert" hidden></p>
       <div class="settings-footer"><button type="button" id="reset-settings" class="subtle-button">恢复默认</button><button type="submit" id="save-settings" class="primary-button">保存设置</button></div>
     </form>
@@ -60,12 +78,14 @@
   <script src="vendor/artplayer.js"></script>
   <script src="vendor/shaka.js"></script>
   <script src="vendor/danmuku.js"></script>
+  <script src="progress-ui.js"></script>
   <script src="playback.js"></script>
   <script src="panels.js"></script>
   <script src="settings-ui.js"></script>
   <script src="watch-layout.js"></script>
   <script src="video-ui.js"></script>
   <script src="shows-ui.js"></script>
+  <script src="search-ui.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

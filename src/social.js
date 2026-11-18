@@ -7,7 +7,7 @@ function createSocial(api,account,getSession){
   async function post(endpoint,values){
     const cookies=await getSession().cookies.get({url:'https://www.bilibili.com/',name:'bili_jct'});
     const csrf=cookies[0]?.value;if(!csrf)throw new Error('登录状态已失效，请重新登录。');
-    const r=await getSession().fetch('https://api.bilibili.com'+endpoint,{method:'POST',headers:{Referer:'https://www.bilibili.com/','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({...values,csrf}).toString(),signal:AbortSignal.timeout(18000)});
+    const r=await getSession().fetch('https://api.bilibili.com'+endpoint,{method:'POST',credentials:'include',redirect:'error',headers:{Referer:'https://www.bilibili.com/','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({...values,csrf}).toString(),signal:AbortSignal.timeout(18000)});
     if(!r.ok)throw new Error('操作结果暂时无法确认，请刷新状态后再试。');
     const j=await r.json();if(j.code!==0)throw new Error(j.code===-101?'登录已失效，请重新登录。':String(j.message||'操作未成功，请稍后重试。').slice(0,180));return j.data||j.result||{};
   }

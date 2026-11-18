@@ -2,7 +2,7 @@
 const { app, BrowserWindow, ipcMain, protocol, net, session, dialog, shell, nativeTheme, globalShortcut, Tray, Menu, nativeImage, clipboard } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { isBiliURL, videoId, imageURL, normalizeVideo } = require('./navigation');
+const { isBiliURL, videoId, imageURL, normalizeVideo, plainText } = require('./navigation');
 const { createMediaService } = require('./media');
 const { createPersonalAPI } = require('./personal');
 const { createPreferences } = require('./preferences');
@@ -12,21 +12,32 @@ const {createShows,positive}=require('./shows');
 const {createSocial}=require('./social');
 const {createRecommendations}=require('./recommendations');
 const {collectionFromView}=require('./collections');
+const {createHistorySync}=require('./history-sync');
+const {createUpdates,repository}=require('./updates');
+const {readGitHubCredential}=require('./github-credentials');
+const {version}=require('../package.json');
+const {createSearch}=require('./search');
 const SHELL_URL = 'bili-app://shell/';
 let mainWindow, biliSession, siteWindow;
 const media = createMediaService(() => biliSession);
+const historySync=createHistorySync(()=>biliSession);
 const personal = createPersonalAPI(apiJSON, accountInfo);
 const wbi=createWbi(apiJSON),subtitles=createSubtitles(wbi,()=>biliSession),shows=createShows(apiJSON,accountInfo);
 const social=createSocial(apiJSON,accountInfo,()=>biliSession),recommendations=createRecommendations(apiJSON,wbi,accountInfo);
+const search=createSearch(apiJSON,wbi);
 let primed;
 let accountPromise;
 let overlayOpen = false;
-let preferences, shortcutCapture=false, watching=false, webFullscreen=false, themeMode='system';
+let preferences, updates, shortcutCapture=false, watching=false, webFullscreen=false, themeMode='system', closeReceiver;
 let bossHidden=false, recoveryTray, siteWasVisible=false, audioWasMuted=false, siteAudioWasMuted=false;
 function windowState() { send('window-state',{pinned:!!mainWindow?.isAlwaysOnTop(),watching}); }
 function togglePin() {
   if(!mainWindow || mainWindow.isDestroyed() || !watching)return;
-  mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop());windowState();
+  const enabled=!mainWindow.isAlwaysOnTop();
+  mainWindow.setAlwaysOnTop(enabled,'floating');
+  if(enabled&&mainWindow.isVisible()&&!mainWindow.isMinimized())mainWindow.moveTop();
+  windowState();
+  send('pin-feedback',mainWindow.isAlwaysOnTop());
 }
 function restoreFromBoss() {
   if(!mainWindow || mainWindow.isDestroyed())return;
@@ -99,17 +110,22 @@ function trusted(event) {
   return mainWindow && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame && event.senderFrame.url === SHELL_URL;
 }
 async function primeSession() {
-  if (!primed) primed = biliSession.fetch('https://www.bilibili.com/', { signal: AbortSignal.timeout(15000) }).then((response) => response.body?.cancel()).catch(() => { primed = null; });
+  if (!primed) primed = biliSession.fetch('https://www.bilibili.com/', { credentials: 'include', signal: AbortSignal.timeout(15000) }).then((response) => response.body?.cancel()).catch(() => { primed = null; });
   await primed;
 }
 async function apiJSON(endpoint, allowLoggedOut = false) {
   await primeSession();
-  const response = await biliSession.fetch(`https://api.bilibili.com${endpoint}`, { cache: 'no-store', headers: { Referer: 'https://www.bilibili.com/' }, signal: AbortSignal.timeout(18000) });
+  const response = await biliSession.fetch(`https://api.bilibili.com${endpoint}`, { credentials: 'include', cache: 'no-store', headers: { Referer: 'https://www.bilibili.com/' }, signal: AbortSignal.timeout(18000) });
   if (!response.ok) throw new Error(`内容暂时无法加载（${response.status}），请稍后重试。`);
   const json = await response.json();
   if (allowLoggedOut && json.code === -101) return { ...(json.data || {}), isLogin: false };
   if (json.code !== 0) throw new Error(json.code === -101 ? '请先登录 B 站。' : `B站暂时未返回内容（${json.code}），请稍后重试。`);
   return json.data ?? json.result;
+}
+function playable(result, metadata) {
+  const source=media.prepare(result);
+  historySync.start(source,metadata);
+  return {...source,...metadata,syncEnabled:true};
 }
 function category(value) {
   return [0, 1, 3, 4, 36, 188, 160, 211].includes(Number(value)) ? Number(value) : 0;
@@ -117,6 +133,10 @@ function category(value) {
 async function requestData(method, data = {}) {
   const page = Math.min(100, Math.max(1, Number(data.page) | 0));
   switch (method) {
+    case 'update-info': return updates.info();
+    case 'check-update': return updates.check(data.local===true);
+    case 'install-update': return updates.install();
+    case 'cancel-update': return updates.cancel();
     case 'settings': return preferences.get();
     case 'save-settings': {
       const result=preferences.save(data);send('settings-changed',result);return result;
@@ -124,25 +144,26 @@ async function requestData(method, data = {}) {
     case 'feed': {
       const rid = category(data.category);
       if(!rid)return recommendations(page);
-      const result = rid ? await apiJSON(`/x/web-interface/ranking/v2?rid=${rid}&type=all`) : await apiJSON(`/x/web-interface/popular?pn=${page}&ps=24`);
-      return { items: (result.list || []).map(normalizeVideo).filter((v) => v.bvid), more: !rid && !result.no_more };
+      const result = await apiJSON(`/x/web-interface/ranking/v2?rid=${rid}&type=all`);
+      return { items: (result.list || []).map(normalizeVideo).filter((v) => v.bvid), more: false };
     }
     case 'ranking': {
       const result = await apiJSON(`/x/web-interface/ranking/v2?rid=${category(data.category)}&type=all`);
       return { items: (result.list || []).slice(0, 100).map(normalizeVideo).filter((v) => v.bvid), more: false };
     }
-    case 'search': {
-      if (typeof data.keyword !== 'string' || !data.keyword.trim() || data.keyword.length > 160) throw new Error('请输入 1–160 个字的搜索内容。');
-      const order = ['totalrank', 'click', 'pubdate'].includes(data.order) ? data.order : 'totalrank';
-      const result = await apiJSON(`/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(data.keyword.trim())}&page=${page}&order=${order}`);
-      return { items: (result.result || []).map(normalizeVideo).filter((v) => v.bvid), more: page < result.numPages, total: Number(result.numResults) || 0 };
-    }
+    case 'search': return search(data,page);
     case 'video': {
       if(positive(data.episodeId))return shows.episode(data);
       const id = videoId(data.bvid);
       if (!id) throw new Error('这个视频链接无法识别，请粘贴包含 BV 号的链接。');
       const result = await apiJSON(`/x/web-interface/view?bvid=${id}`);
-      return { ...normalizeVideo(result), coinLimit:Number(result.copyright)===1?2:1, collection:collectionFromView(result), description: String(result.desc || '').slice(0, 12000), pages: (result.pages || []).map((p) => ({ page: p.page, cid: Number(p.cid), title: String(p.part || '').slice(0, 160),duration:Number(p.duration)||0 })) };
+      return { ...normalizeVideo(result), coinLimit:Number(result.copyright)===1?2:1, original:Number(result.copyright)===1, comments:Number(result.stat?.reply)||0, collection:collectionFromView(result), description: String(result.desc || '').slice(0, 12000), pages: (result.pages || []).map((p) => ({ page: p.page, cid: Number(p.cid), title: String(p.part || '').slice(0, 160),duration:Number(p.duration)||0 })) };
+    }
+    case 'video-extra': {
+      const id=videoId(data.bvid);if(!id)throw new Error('无效的视频编号。');
+      const detail=await apiJSON(`/x/web-interface/view/detail?bvid=${id}`);
+      if(detail.View?.bvid!==id)throw new Error('视频详情暂不可用。');
+      return {tags:(detail.Tags||[]).slice(0,24).map(tag=>plainText(tag.tag_name)).filter(Boolean),fans:Math.max(0,Number(detail.Card?.card?.fans)||0),uploads:Math.max(0,Number(detail.Card?.archive_count)||0)};
     }
     case 'related': {
       const id = videoId(data.bvid);
@@ -153,7 +174,7 @@ async function requestData(method, data = {}) {
     case 'playback': {
       if(positive(data.episodeId)){
         const v=await shows.episode(data),result=await shows.play(data);
-        return {...media.prepare(result),cid:v.pages[0].cid,aid:v.aid,bvid:v.bvid,episodeId:v.episodeId};
+        return playable(result,{cid:v.pages[0].cid,aid:v.aid,bvid:v.bvid,episodeId:v.episodeId,seasonId:v.seasonId,showType:v.showType});
       }
       const id = videoId(data.bvid);
       if (!id) throw new Error('无效的视频编号。');
@@ -161,11 +182,13 @@ async function requestData(method, data = {}) {
       const part = (view.pages || []).find(p => p.page === Number(data.part || 1));
       if (!part) throw new Error('找不到这个分集。');
       const result = await apiJSON('/x/player/playurl?bvid=' + id + '&cid=' + part.cid + '&qn=127&fnval=4048&fourk=1');
-      return { ...media.prepare(result), cid: part.cid,aid:view.aid,bvid:id };
+      return playable(result,{cid:part.cid,aid:view.aid,bvid:id});
     }
     case 'subtitle-tracks': return subtitles.list(data);
     case 'subtitle-content': return subtitles.content(data.token);
     case 'bangumi': return shows.list(data,page);
+    case 'anime': return shows.discover(data,page);
+    case 'anime-filters': return shows.filters(data);
     case 'season': return shows.season(data);
     case 'video-state': case 'video-folders': case 'like-video': case 'coin-video': case 'favorite-video': case 'follow-author': case 'show-follow': return social(method,data);
     case 'collection': {
@@ -178,7 +201,8 @@ async function requestData(method, data = {}) {
       const id=videoId(data.bvid),ep=positive(data.episodeId);if(!id&&!ep)throw new Error('无效的视频编号。');
       clipboard.writeText(ep?'https://www.bilibili.com/bangumi/play/ep'+ep:'https://www.bilibili.com/video/'+id+'/');return {};
     }
-    case 'release-media': media.release(String(data.token)); return {};
+    case 'progress': return preferences.get().values.historySync?historySync.update(data):{status:'disabled'};
+    case 'release-media': historySync.release(String(data.token)); media.release(String(data.token)); return {};
     case 'danmaku': {
       const cid = Number(data.cid); if (!Number.isSafeInteger(cid) || cid <= 0) throw new Error('无效的分集编号。');
       const response = await biliSession.fetch('https://api.bilibili.com/x/v1/dm/list.so?oid=' + cid, {headers:{Referer:'https://www.bilibili.com/'}, signal:AbortSignal.timeout(15000)});
@@ -187,8 +211,13 @@ async function requestData(method, data = {}) {
     }
     case 'comments': {
       const aid = Number(data.aid); if (!Number.isSafeInteger(aid) || aid <= 0) throw new Error('无效的视频编号。');
-      const r = await apiJSON('/x/v2/reply?type=1&oid='+aid+'&pn='+page+'&ps=20&sort=2');
-      return {items:(r.replies||[]).map(c=>({id:String(c.rpid),name:String(c.member?.uname||''),mid:Number(c.member?.mid),avatar:imageURL(c.member?.avatar),text:String(c.content?.message||'').slice(0,8000),likes:Number(c.like)||0})),more:!!r.replies?.length && page*20<Number(r.page?.count),total:Number(r.page?.count)||0};
+      const root=String(data.root||'');
+      const sort=data.sort==='new'?0:2;
+      const endpoint=/^\d{1,20}$/.test(root)?`/x/v2/reply/reply?root=${root}&type=1&oid=${aid}&pn=${page}&ps=20`:`/x/v2/reply?type=1&oid=${aid}&pn=${page}&ps=20&sort=${sort}`;
+      const r=await apiJSON(endpoint);
+      const pinned=!root&&page===1?r.top?.upper:null;
+      const replies=(r.replies||[]).filter(c=>!pinned||c.rpid!==pinned.rpid);
+      return {items:[...(pinned?[pinned]:[]),...replies].map(c=>({id:String(c.rpid_str||c.rpid),name:String(c.member?.uname||''),mid:Number(c.member?.mid),avatar:imageURL(c.member?.avatar),text:String(c.content?.message||'').slice(0,8000),likes:Number(c.like)||0,replies:Number(c.rcount)||0,time:Number(c.ctime)||0,pinned:c===pinned})),more:!!r.replies?.length&&page*20<Number(r.page?.count),total:Number(r.page?.acount||r.page?.count)||0};
     }
     case 'favorite-folders': case 'favorites': case 'profile': case 'uploads': case 'dynamics': return personal(method,data,page);
     case 'account': return accountInfo();
@@ -248,6 +277,9 @@ function openSite(url) {
 }
 async function initialize() {
   preferences=createPreferences(app.getPath('userData'),globalShortcut,{boss:toggleBoss,pin:togglePin});
+  updates=createUpdates({app,version,fetch:(...args)=>fetch(...args),portableFile:process.env.PORTABLE_EXECUTABLE_FILE,onProgress:state=>send('update-progress',state),
+    getCredential:()=>readGitHubCredential(repository,app.getPath('userData')),
+    chooseFolder:async()=>{const result=await dialog.showOpenDialog(mainWindow,{title:'选择包含 bili-release.json 的发布文件夹',properties:['openDirectory']});return result.filePaths[0];}});
   biliSession = session.fromPartition('persist:bilibili');
   biliSession.setUserAgent(biliSession.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(/\sbili-desktop-lite\/\S+/gi, ''), 'zh-CN');
   biliSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
@@ -259,6 +291,8 @@ async function initialize() {
     cookieTimer = setTimeout(() => send('account-changed'), 500);
   });
   const files = new Map([['/', 'index.html'], ['/style.css', 'style.css'], ['/renderer.js', 'renderer.js'], ['/icons.js', 'icons.js'], ['/playback.js','playback.js'], ['/panels.js','panels.js'], ['/video-ui.js','video-ui.js'], ['/shows-ui.js','shows-ui.js'], ['/settings-ui.js','settings-ui.js'], ['/watch-layout.js','watch-layout.js'], ['/vendor/artplayer.js','vendor/artplayer.js'], ['/vendor/shaka.js','vendor/shaka.js'], ['/vendor/danmuku.js','vendor/danmuku.js']]);
+  files.set('/progress-ui.js','progress-ui.js');
+  files.set('/search-ui.js','search-ui.js');
   protocol.handle('bili-app', async (request) => {
     const url = new URL(request.url);
     if (url.hostname === 'shell' && url.pathname.startsWith('/media/')) return media.handle(request);
@@ -274,7 +308,7 @@ async function initialize() {
     }
     return new Response('Not found', { status: 404 });
   });
-  mainWindow = new BrowserWindow({ width: 1440, height: 960, minWidth: 1040, minHeight: 720, title: 'Bili Lite', backgroundColor: '#f7f8fc', titleBarStyle: 'hidden', titleBarOverlay: { color: '#ffffff', symbolColor: '#333342', height: 46 }, icon: path.join(__dirname, '../assets/icon.png'), show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
+  mainWindow = new BrowserWindow({ width: 1440, height: 960, minWidth: 720, minHeight: 500, title: 'Bili Lite', backgroundColor: '#f7f8fc', titleBarStyle: 'hidden', titleBarOverlay: { color: '#ffffff', symbolColor: '#333342', height: 46 }, icon: path.join(__dirname, '../assets/icon.png'), show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
   mainWindow.removeMenu();
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -293,6 +327,7 @@ async function initialize() {
       case 'shortcut-capture': captureShortcuts(value===true); break;
       case 'boss': toggleBoss(); break;
       case 'pin': togglePin(); break;
+      case 'progress-saved': closeReceiver?.(); break;
       case 'play-state':
         watching=value===true;
         if(!watching)mainWindow.setAlwaysOnTop(false);
@@ -306,7 +341,19 @@ async function initialize() {
   mainWindow.on('always-on-top-changed',windowState);
   mainWindow.on('show',()=>{if(bossHidden)restoreFromBoss();});
   mainWindow.on('leave-full-screen', () => send('resize'));
-  mainWindow.on('close', () => { siteWindow?.close(); });
+  let closeAllowed=false;
+  mainWindow.on('close', event => {
+    if(!watching||closeAllowed||mainWindow.webContents.isCrashed()){siteWindow?.close();return;}
+    event.preventDefault();
+    if(closeReceiver)return;
+    const finish=()=>{
+      closeReceiver=null;closeAllowed=true;
+      if(mainWindow&&!mainWindow.isDestroyed())mainWindow.close();
+    };
+    const timeout=setTimeout(finish,750);
+    closeReceiver=()=>{clearTimeout(timeout);setTimeout(finish,100);};
+    send('persist-progress');
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
   await mainWindow.loadURL(SHELL_URL);
   mainWindow.show();

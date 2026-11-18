@@ -45,7 +45,7 @@ async function fetchDynamics(append=false) {
   }catch(e){if(turn===generation){if(append)toast(e.message);else $('dynamic-list').innerHTML=empty('动态暂时无法加载',e.message,'refresh');}return false;}
   finally{if(turn===generation){loadingMore=false;if($('dynamic-more'))$('dynamic-more').disabled=false;}}
 }
-let watchTab='related', commentPage=0, commentItems=[], commentsBusy=false, commentMore=false;
+let watchTab='related', commentPage=0, commentItems=[], commentsBusy=false, commentMore=false, commentSort='hot';
 function chooseWatchTab(tab) {
   watchTab=tab;
   document.querySelectorAll('.watch-tabs [data-watch-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.watchTab===tab);b.setAttribute('aria-selected',String(b.dataset.watchTab===tab));});
@@ -57,15 +57,31 @@ async function fetchComments(append=false) {
   if(!activeVideo || commentsBusy)return;commentsBusy=true;
   if($('comments-more'))$('comments-more').disabled=true;
   try {
-    const d=await window.bili.api('comments',{aid:activeVideo.aid,page:append?commentPage+1:1});
+    const d=await window.bili.api('comments',{aid:activeVideo.aid,page:append?commentPage+1:1,sort:commentSort});
     if(turn!==generation)return;
     commentPage=append?commentPage+1:1;
     const fresh=d.items.filter(c=>!commentItems.some(o=>o.id===c.id));
     commentMore=d.more && (!append || fresh.length>0);
     commentItems=append?[...commentItems,...fresh]:d.items;
-    $('comments-panel').innerHTML=`<p class="pane-caption">${number(d.total)} 条评论 · 热度排序</p>`+(commentItems.length?commentItems.map(c=>`<article class="comment-card"><button data-user-space="${c.mid}" class="comment-avatar">${c.avatar?`<img src="${esc(image(c.avatar))}" alt="">`:icon('user')}</button><div><button data-user-space="${c.mid}" class="comment-name">${esc(c.name)}</button><p>${esc(c.text)}</p><small>${number(c.likes)} 人赞同</small></div></article>`).join(''):'<p class="muted">暂时没有评论。</p>')+(commentMore?'<button id="comments-more" class="secondary-button">更多评论</button>':'');
+    $('comments-panel').innerHTML=`<div class="comment-toolbar"><p class="pane-caption">${number(d.total)} 条评论</p><button data-comment-sort="hot" aria-pressed="${commentSort==='hot'}">最热</button><button data-comment-sort="new" aria-pressed="${commentSort==='new'}">最新</button></div>`+(commentItems.length?commentItems.map(c=>commentCard(c)).join(''):'<p class="muted">暂时没有评论。</p>')+(commentMore?'<button id="comments-more" class="secondary-button">更多评论</button>':'');
   }catch(e){if(turn===generation){if(append)toast(e.message);else $('comments-panel').innerHTML=`<p class="pane-caption">${esc(e.message)}</p><button id="comments-retry" class="secondary-button">重新加载评论</button>`;}}
   finally{if(turn===generation){commentsBusy=false;if($('comments-more'))$('comments-more').disabled=false;}}
+}
+function commentCard(c,nested=false) {
+  const time=c.time?new Date(c.time*1000).toLocaleDateString('zh-CN'):'';
+  return `<article class="comment-card"><button data-user-space="${c.mid}" class="comment-avatar" aria-label="打开 ${esc(c.name)} 的空间">${c.avatar?`<img src="${esc(image(c.avatar))}" alt="">`:icon('user')}</button><div><button data-user-space="${c.mid}" class="comment-name">${esc(c.name)}</button>${c.pinned?'<span class="comment-pinned">置顶</span>':''}<p>${esc(c.text)}</p><small>${esc(time)} ${number(c.likes)} 赞</small>${!nested&&c.replies?`<button class="comment-reply-button" data-reply-root="${esc(c.id)}" data-reply-page="1">查看 ${number(c.replies)} 条回复</button><div class="comment-thread"></div>`:''}</div></article>`;
+}
+async function fetchReplies(button) {
+  if(!activeVideo||button.disabled)return;
+  const turn=generation,page=Number(button.dataset.replyPage);
+  button.disabled=true;
+  try {
+    const result=await window.bili.api('comments',{aid:activeVideo.aid,root:button.dataset.replyRoot,page});
+    if(turn!==generation||!button.isConnected)return;
+    button.nextElementSibling.insertAdjacentHTML('beforeend',result.items.map(c=>commentCard(c,true)).join(''));
+    button.dataset.replyPage=String(page+1);button.hidden=!result.more;button.textContent='加载更多回复';
+  } catch(error){if(turn===generation)toast(error.message);}
+  finally{button.disabled=false;}
 }
 function startPart(part) {
   const turn=generation;
@@ -75,5 +91,5 @@ function startPart(part) {
   NativePlayer.start($('player-slot'),route.bvid,part,message=>{
     if(turn!==generation)return;
     $('play-status').textContent=message;$('play-status').hidden=!message;
-  },route.episodeId);
+  },route.episodeId,activeVideo);
 }

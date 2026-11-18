@@ -1,15 +1,25 @@
 'use strict';
-let appPreferences={webFullscreen:false,rightPanel:true,bossPause:true,bossKey:'Control+Alt+B',pinKey:'Control+Alt+P'};
+let appPreferences={webFullscreen:false,rightPanel:true,historySync:true,bossPause:true,bossKey:'Control+Alt+B',pinKey:'Control+Alt+P'};
 let preferencesReady, bossIsHidden=false, settingsFocus;
 const keyLabel=key=>key.replaceAll('Control','Ctrl');
 function updatePreferences(data) {
   appPreferences=data.values;
-  $('pin-window').title=`置顶播放窗口${appPreferences.pinKey?' · '+keyLabel(appPreferences.pinKey):''}`;
+  updatePinState({pinned:$('pin-window').getAttribute('aria-pressed')==='true'});
+}
+function updatePinState({pinned}) {
+  const label=pinned?'取消置顶播放窗口':'置顶播放窗口';
+  for(const button of [$('pin-window'),$('pin-playback')].filter(Boolean)) {
+    button.setAttribute('aria-pressed',String(pinned));
+    button.setAttribute('aria-label',label);
+    button.title=label+(appPreferences.pinKey?' · '+keyLabel(appPreferences.pinKey):'');
+  }
+  if($('pin-playback'))$('pin-playback').innerHTML=icon('pin')+(pinned?'已置顶':'置顶');
 }
 function populateSettings() {
   $('pref-web-fullscreen').checked=appPreferences.webFullscreen;
   $('pref-right-panel').checked=appPreferences.rightPanel;
   $('pref-boss-pause').checked=appPreferences.bossPause;
+  $('pref-history-sync').checked=appPreferences.historySync;
   for(const input of document.querySelectorAll('[data-shortcut]')) {
     input.dataset.value=appPreferences[input.dataset.shortcut];input.value=keyLabel(input.dataset.value);
   }
@@ -38,12 +48,13 @@ function initSettings() {
     event.preventDefault();document.activeElement?.blur();window.bili.command('shortcut-capture',false);
     $('save-settings').disabled=true;settingsError('');
     try {
-      const data=await window.bili.api('save-settings',{webFullscreen:$('pref-web-fullscreen').checked,rightPanel:$('pref-right-panel').checked,bossPause:$('pref-boss-pause').checked,bossKey:$('pref-boss-key').dataset.value,pinKey:$('pref-pin-key').dataset.value});
+      const data=await window.bili.api('save-settings',{webFullscreen:$('pref-web-fullscreen').checked,rightPanel:$('pref-right-panel').checked,historySync:$('pref-history-sync').checked,bossPause:$('pref-boss-pause').checked,bossKey:$('pref-boss-key').dataset.value,pinKey:$('pref-pin-key').dataset.value});
       updatePreferences(data);closeSettings();toast('设置已保存，默认布局将在下次进入视频时应用');
     }catch(e){settingsError(e.message);}finally{$('save-settings').disabled=false;}
   });
   $('reset-settings').addEventListener('click',()=>{
     $('pref-web-fullscreen').checked=false;$('pref-right-panel').checked=true;$('pref-boss-pause').checked=true;
+    $('pref-history-sync').checked=true;
     for(const [id,key] of [['pref-boss-key','Control+Alt+B'],['pref-pin-key','Control+Alt+P']]){$(id).dataset.value=key;$(id).value=keyLabel(key);}settingsError('');
   });
   for(const input of document.querySelectorAll('[data-shortcut]')) {
@@ -64,4 +75,47 @@ function initSettings() {
   document.querySelectorAll('[data-clear-shortcut]').forEach(b=>b.addEventListener('click',()=>{const input=$(b.dataset.clearShortcut);input.dataset.value='';input.value='';}));
   $('pin-window').addEventListener('click',()=>window.bili.command('pin'));
   window.addEventListener('focus',()=>{if($('settings-dialog').open && document.activeElement?.dataset.shortcut)window.bili.command('shortcut-capture',true);});
+  initUpdates();
+}
+function initUpdates() {
+  const ids=['check-update','update-folder','install-update'];
+  const lock=locked=>ids.forEach(id=>{$(id).disabled=locked;});
+  const status=message=>{$('update-status').textContent=message;};
+  const progress=$('update-progress'),cancel=$('cancel-update'),notes=$('update-notes');
+  const size=bytes=>`${(bytes/1048576).toFixed(1)} MB`;
+  window.bili.api('update-info').then(({current})=>{$('current-version').textContent=`v${current}`;}).catch(()=>{});
+  async function check(local) {
+    lock(true);$('install-update').hidden=true;notes.hidden=true;notes.open=false;status('正在检查更新…');
+    try {
+      const data=await window.bili.api('check-update',{local});
+      status(data.offer?`${data.message} · ${data.offer.source} · ${size(data.offer.size)}`:data.message);
+      notes.querySelector('p').textContent=data.offer?.notes||'';
+      notes.hidden=!data.offer?.notes;
+      $('install-update').hidden=!data.offer;
+    } catch(error){status(error.message+' 可从发布文件夹检查。');}
+    finally{lock(false);}
+  }
+  $('check-update').addEventListener('click',()=>check(false));
+  $('update-folder').addEventListener('click',()=>check(true));
+  window.bili.onEvent((type,data)=>{
+    if(type!=='update-progress')return;
+    const {phase,bytes,total,version}=data;
+    const downloading=phase==='downloading';
+    cancel.hidden=!downloading;
+    if(downloading){
+      const percent=Math.min(100,Math.floor(100*bytes/total));
+      progress.value=percent;
+      status(`正在下载 v${version} · ${percent}% · ${size(bytes)} / ${size(total)}`);
+    }else{
+      progress.removeAttribute('value');
+      status({preparing:'正在准备更新…',copying:'正在复制发布包…',verifying:'正在核对大小与 SHA-256…',restarting:'校验通过，正在重启…'}[phase]||'正在更新…');
+    }
+    progress.hidden=false;
+  });
+  cancel.addEventListener('click',()=>{cancel.disabled=true;window.bili.api('cancel-update').catch(error=>status(error.message));});
+  $('install-update').addEventListener('click',async()=>{
+    lock(true);cancel.disabled=false;status('正在准备更新…');
+    try {NativePlayer.flushProgress();await window.bili.api('install-update');}
+    catch(error){status(error.message);progress.hidden=true;cancel.hidden=true;lock(false);}
+  });
 }

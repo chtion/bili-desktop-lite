@@ -1,6 +1,6 @@
 # Bili Lite 发行流程
 
-发行号使用 0.x。Git 标签使用 `v` 加版本号，例如 `v0.10.0`。应用从当前仓库的 GitHub Releases 读取已发布的正式附件，版本说明可标为开发版，GitHub 的预发布标记保持关闭。
+开发期间使用 `0.x.y`。每次发布默认只将末位 `y` 加 1，例如 `0.10.1` → `0.10.2`。只有用户明确要求时才调整 `x`。Git 标签使用 `v` 加完整版本号，例如 `v0.10.1`。应用从当前仓库的 GitHub Releases 读取已发布的正式附件，版本说明可标为开发版，GitHub 的预发布标记保持关闭。
 
 1. 更新 `package.json` 和 `package-lock.json` 的版本号，并更新 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
 2. 运行 `npm run check` 和相关 Electron 回归测试，再运行 `npm run pack:win`。构建会在 `dist` 中生成安装版、免安装版、SHA-256 和发布清单。

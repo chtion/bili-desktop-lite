@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const defaults = Object.freeze({ webFullscreen: false, rightPanel: true, historySync: true, bossPause: true, bossKey: 'Control+Alt+B', pinKey: 'Control+Alt+P' });
+const defaults = Object.freeze({ webFullscreen: false, rightPanel: true, feedAutoNext: true, detailAutoNext: true, historySync: true, bossPause: true, bossKey: 'Control+Alt+B', pinKey: 'Control+Alt+P' });
 function accelerator(value) {
   if (value === '') return '';
   if (typeof value !== 'string' || value.length > 60) throw new Error('快捷键格式无效。');
@@ -15,7 +15,7 @@ function accelerator(value) {
 }
 function normalize(input, base=defaults) {
   const result={...base};
-  for (const key of ['webFullscreen','rightPanel','bossPause','historySync']) if(Object.hasOwn(input,key)) {
+  for (const key of ['webFullscreen','rightPanel','feedAutoNext','detailAutoNext','bossPause','historySync']) if(Object.hasOwn(input,key)) {
     if(typeof input[key]!=='boolean')throw new Error('设置值无效。');result[key]=input[key];
   }
   for(const key of ['bossKey','pinKey']) if(Object.hasOwn(input,key))result[key]=accelerator(input[key]);

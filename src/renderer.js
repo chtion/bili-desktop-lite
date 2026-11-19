@@ -168,12 +168,16 @@ function historyCard(v) {
   return `<article class="video-card"><button class="cover-button" ${action} aria-label="继续播放 ${esc(v.title)}">${cover(v)}<span class="history-progress"><i style="width:${progress}%"></i></span></button><button class="video-title" ${action}>${esc(v.title)}</button><div class="video-author">${esc(label)}</div></article>`;
 }
 async function navigate(name, extra = {}, options = {}) {
+  if(route.name==='swipe')StreamFeed.leave();
+  Extensions.leave();
   rememberRoute({name,category:0,keyword:'',order:'totalrank',...extra},options.replace);
   setWebFullscreen(false);window.bili.command('play-state',false);$('pin-window').hidden=true;
   if (!options.keepAccount) closeAccount(false);
   $('action-dialog').close();
   generation++; NativePlayer.destroy(); activeVideo = null; currentItems = []; loadingMore = false;
   route = { name, category: 0, keyword: '', order: 'totalrank', page: 1, ...extra };
+  document.documentElement.dataset.route=name;
+  setSearchExpanded(name==='home');
   updateBackButton();
   $('search').value = name === 'search' ? route.keyword : '';
   $('workspace').classList.remove('playing'); $('workspace').scrollTop = 0;
@@ -186,9 +190,13 @@ async function navigate(name, extra = {}, options = {}) {
   if(name==='anime'){route.order=extra.order||'hot';return loadAnime();}
   if(name==='search')return loadSearch();
   if(name==='season')return loadSeason();
+  if(name==='swipe'){window.bili.command('play-state',true);$('pin-window').hidden=false;return StreamFeed.mount();}
+  if(name==='hongguo'||name==='browser')return Extensions.mount(name);
   listBase(); return fetchList();
 }
 async function watch(bvid, options = {}) {
+  if(route.name==='swipe')StreamFeed.leave();
+  Extensions.leave();
   if(!options.episodeId&&videos.get(bvid)?.episodeId)options={...options,episodeId:videos.get(bvid).episodeId};
   rememberRoute({name:'watch',bvid,episodeId:options.episodeId},options.replace);
   setWebFullscreen(false);window.bili.command('play-state',true);$('pin-window').hidden=false;
@@ -196,6 +204,8 @@ async function watch(bvid, options = {}) {
   const turn = ++generation;
   if (route.name !== 'watch') previousRoute = { ...route };
   route = { name: 'watch', bvid, episodeId:options.episodeId, part:options.part||1 };updateBackButton();
+  document.documentElement.dataset.route='watch';
+  setSearchExpanded(false);
   NativePlayer.destroy(); activeVideo=null; setSidebar(true);
   commentPage=0; commentItems=[]; commentsBusy=false; commentSort='hot';watchTab='related';
   $('workspace').classList.add('playing'); $('workspace').scrollTop = 0;
@@ -205,7 +215,7 @@ async function watch(bvid, options = {}) {
   updatePinState({pinned:$('pin-window').getAttribute('aria-pressed')==='true'});
   try {
     await preferencesReady;if(turn!==generation)return;
-    setRightPanel(appPreferences.rightPanel);setWebFullscreen(appPreferences.webFullscreen);
+    setRightPanel(appPreferences.rightPanel);setWebFullscreen(options.fullscreen??appPreferences.webFullscreen);
     const v = await window.bili.api('video', { bvid,episodeId:options.episodeId });
     if (turn !== generation) return;
     activeVideo=v;route.bvid=v.bvid;remember([v]);$('window-video-title').textContent=v.title;
@@ -213,14 +223,16 @@ async function watch(bvid, options = {}) {
     if(!options.part&&last?.part&&v.pages.some(p=>p.page===last.part))route.part=last.part;
     renderVideoDetail(v);
     if(v.kind!=='episode')window.bili.api('video-extra',{bvid:v.bvid}).then(data=>{if(turn===generation)renderVideoExtra(data);}).catch(()=>{});
-    updateSaved(); startPart(route.part);
+    updateSaved(); startPart(route.part,options.resumeAt);
     window.bili.api('related',{bvid:v.bvid}).then(data=>{if(turn===generation){remember(data.items);$('related-list').innerHTML=data.items.length?data.items.map(compactCard).join(''):'<p class="muted">暂时没有相关推荐。</p>';$('intro-related-list').innerHTML=$('related-list').innerHTML;}}).catch(()=>{if(turn===generation)$('related-list').innerHTML='<p class="muted">推荐暂时未能加载，稍后再来看看。</p>';});
   }catch(error){if(turn===generation){$('play-status').textContent=error.message;$('video-detail').innerHTML='<button class="primary-button" id="retry-video">重新加载</button>';}}
 }
 let refreshing=false;
 async function refreshRoute() {
   if(refreshing)return;
-  if(route.name==='watch'){watch(route.bvid,{episodeId:route.episodeId,part:route.part,replace:true});return;}
+  if(route.name==='swipe'){StreamFeed.reset();navigate('swipe',{},{replace:true});return;}
+  if(route.name==='hongguo'||route.name==='browser'){Extensions.refresh();return;}
+  if(route.name==='watch'){watch(route.bvid,{episodeId:route.episodeId,part:route.part,fullscreen:webMode,replace:true});return;}
   refreshing=true;
   document.querySelectorAll('[data-refresh]').forEach(b=>{b.disabled=true;b.classList.add('refreshing');});
   const turn=++generation; loadingMore=false;
@@ -249,6 +261,7 @@ async function updateAccount() {
     document.querySelector('#account .avatar').innerHTML = account.avatar ? `<img src="${esc(image(account.avatar))}" alt="">` : icon('user');
     $('account').title = account.loggedIn ? `${account.name} · 账号信息` : '登录 B站';
     if(previousMid!==account.mid){
+      if(previousMid!==undefined){StreamFeed.reset();if(route.name==='swipe')navigate('swipe',{},{replace:true});}
       if(['following','followers','favorites','dynamics','bangumi'].includes(route.name))navigate(route.name);
       else if(route.name==='home' && !route.category)navigate('home',{page:1},{replace:true,keepAccount:true});
       else if(route.name==='watch'&&activeVideo)loadVideoState();
@@ -329,6 +342,16 @@ async function fetchPeople(append = false) {
     else $('people-area').innerHTML = empty('暂时无法加载列表', error.message, 'users') + `<div class="empty-action"><button class="primary-button" data-refresh>重新加载</button></div>`;
   } finally { if (turn === generation) peopleLoading = false; }
 }
+function setSearchExpanded(expanded,focus=false) {
+  $('search-form').classList.toggle('search-compact',!expanded);
+  $('search-toggle').setAttribute('aria-expanded',String(expanded));
+  $('search-fields').inert=!expanded;
+  if(focus){$('search').focus();$('search').select();}
+}
+$('search-toggle').addEventListener('click',()=>setSearchExpanded(true,true));
+$('search-form').addEventListener('focusout',()=>{
+  queueMicrotask(()=>{if(route.name!=='home'&&!$('search-form').contains(document.activeElement))setSearchExpanded(false);});
+});
 $('search-form').addEventListener('submit', (event) => {
   event.preventDefault(); const keyword = $('search').value.trim(); if (!keyword) return;
   const match = keyword.match(/^(?:https:\/\/(?:www\.)?bilibili\.com\/video\/)?(BV[1-9A-HJ-NP-Za-km-z]{10})(?:[/?#].*)?$/);
@@ -363,13 +386,15 @@ document.addEventListener('click', (event) => {
   else if (button.id==='toggle-details') setRightPanel(!rightPanelOpen);
   else if (button.id==='toggle-web-mode') setWebFullscreen(!webMode);
   else if (button.id === 'load-more' && !loadingMore && !refreshing) fetchList(true);
-  else if (button.id === 'retry-video') watch(route.bvid,{episodeId:route.episodeId,part:route.part,replace:true});
+  else if (button.id === 'retry-video') watch(route.bvid,{episodeId:route.episodeId,part:route.part,fullscreen:webMode,replace:true});
 });
 window.bili.onEvent((type, value) => {
-  if (type === 'focus-search') { $('search').focus(); $('search').select(); }
+  if (Extensions.event(type,value)) return;
+  if (type === 'focus-search') setSearchExpanded(true,true);
   else if (type === 'escape') {
     if ($('action-dialog').open) closeAction();
     else if ($('settings-dialog').open) closeSettings();
+    else if(route.name!=='home' && !$('search-fields').inert){setSearchExpanded(false);$('search-toggle').focus();}
     else if (NativePlayer.dismissMenu()) return;
     else if (webMode && !$('sidebar').inert) revealImmersiveSidebar(false);
     else if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});

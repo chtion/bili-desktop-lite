@@ -45,7 +45,7 @@ const NativePlayer = (() => {
     if(!current?.closeMenu)return false;
     current.closeMenu();current.closeMenu=null;return true;
   }
-  async function start(container, bvid, part, onStatus, episodeId, metadata) {
+  async function start(container, bvid, part, onStatus, episodeId, metadata, options = {}) {
     destroy();
     const turn = revision;
     const state = { disposed: false, engine: null, art: null, token: null };
@@ -56,7 +56,7 @@ const NativePlayer = (() => {
       state.token = source.token;
       state.source=source;
       state.syncEnabled=source.syncEnabled;
-      const startAt=PlaybackProgress.startTime(source.bvid,source.episodeId,source.cid);
+      const startAt=options.resumeAt ?? PlaybackProgress.startTime(source.bvid,source.episodeId,source.cid);
       container.replaceChildren();
       const status = message => { if (!state.disposed) onStatus(message); };
       const loadDash = async (video, url, art) => {
@@ -84,7 +84,7 @@ const NativePlayer = (() => {
         lang:'zh-cn', theme:'#ef608d', volume:0.7, autoplay:!suspended, autoSize:false,
         setting:true, playbackRate:false, aspectRatio:true, pip:true, fullscreen:true,
         fullscreenWeb:false, hotkey:true, lock:true, moreVideoAttr:{crossOrigin:'anonymous'},
-        controls:[{name:'bili-rate',position:'right',index:14,html:rate.root},{name:'bili-captions',position:'right',index:15,html:subtitles.root},{name:'app-fullscreen',position:'right',index:20,html:icon('expand'),tooltip:'网页全屏 / 退出',click:()=>window.dispatchEvent(new Event('toggle-web-fullscreen'))}],
+        controls:[{name:'bili-rate',position:'right',index:14,html:rate.root},{name:'bili-captions',position:'right',index:15,html:subtitles.root},...(!options.swipe?[{name:'app-fullscreen',position:'right',index:20,html:icon('expand'),tooltip:'网页全屏 / 退出',click:()=>window.dispatchEvent(new Event('toggle-web-fullscreen'))}]:[])],
         plugins:[artplayerPluginDanmuku({danmuku:async()=>{
           try {
             const {xml}=await window.bili.api('danmaku',{cid:source.cid});
@@ -103,9 +103,10 @@ const NativePlayer = (() => {
       state.menuEvents=new AbortController();
       document.addEventListener('pointerdown',event=>{if(!event.target.closest('.bili-player-picker'))dismissMenu();},{signal:state.menuEvents.signal});
       state.saveProgress=PlaybackProgress.track(state,metadata,part,video);
+      video.addEventListener('ended',()=>{if(!state.disposed&&!suspended)options.onEnded?.(state);});
       if(startAt){
         if(source.type!=='mpd')video.addEventListener('loadedmetadata',()=>{if(startAt<video.duration-2)video.currentTime=startAt;},{once:true});
-        video.addEventListener('playing',()=>{if(Math.abs(video.currentTime-startAt)<3)state.art.notice.show=`已续播至 ${duration(startAt)}`;},{once:true});
+        video.addEventListener('playing',()=>{if(Math.abs(video.currentTime-startAt)<3)state.art.notice.show=`已续播至 ${duration(Math.floor(startAt))}`;},{once:true});
       }
       video.addEventListener('ratechange',()=>{rate.toggle.textContent=video.playbackRate===1?'倍速':`${video.playbackRate}×`;});
       state.art.on('error',()=>status('视频暂时无法播放，请点击重试。'));
@@ -123,7 +124,7 @@ const NativePlayer = (() => {
         if(state.disposed)return;
         const choices=result.tracks.length?[{label:'关闭'},...result.tracks.map(track=>({label:track.label+(track.ai?' · AI':''),track}))]:[{label:result.needLogin?'登录后查看字幕':'暂无可用字幕',disabled:true}];
         subtitles.replace(choices);
-        renderPlayerDetails(result);
+        if(!options.swipe)renderPlayerDetails(result);
       }).catch(()=>{if(!state.disposed)subtitles.replace([{label:'暂时无法加载字幕',disabled:true}]);});
     } catch (e) { if(turn===revision)onStatus(e.message); }
   }

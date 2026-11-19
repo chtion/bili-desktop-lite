@@ -1,5 +1,5 @@
 'use strict';
-let appPreferences={webFullscreen:false,rightPanel:true,historySync:true,bossPause:true,bossKey:'Control+Alt+B',pinKey:'Control+Alt+P'};
+let appPreferences={webFullscreen:false,rightPanel:true,feedAutoNext:true,detailAutoNext:true,historySync:true,bossPause:true,bossKey:'Control+Alt+B',pinKey:'Control+Alt+P'};
 let preferencesReady, bossIsHidden=false, settingsFocus;
 const keyLabel=key=>key.replaceAll('Control','Ctrl');
 function updatePreferences(data) {
@@ -18,6 +18,8 @@ function updatePinState({pinned}) {
 function populateSettings() {
   $('pref-web-fullscreen').checked=appPreferences.webFullscreen;
   $('pref-right-panel').checked=appPreferences.rightPanel;
+  $('pref-feed-next').checked=appPreferences.feedAutoNext;
+  $('pref-detail-next').checked=appPreferences.detailAutoNext;
   $('pref-boss-pause').checked=appPreferences.bossPause;
   $('pref-history-sync').checked=appPreferences.historySync;
   for(const input of document.querySelectorAll('[data-shortcut]')) {
@@ -48,13 +50,14 @@ function initSettings() {
     event.preventDefault();document.activeElement?.blur();window.bili.command('shortcut-capture',false);
     $('save-settings').disabled=true;settingsError('');
     try {
-      const data=await window.bili.api('save-settings',{webFullscreen:$('pref-web-fullscreen').checked,rightPanel:$('pref-right-panel').checked,historySync:$('pref-history-sync').checked,bossPause:$('pref-boss-pause').checked,bossKey:$('pref-boss-key').dataset.value,pinKey:$('pref-pin-key').dataset.value});
+      const data=await window.bili.api('save-settings',{webFullscreen:$('pref-web-fullscreen').checked,rightPanel:$('pref-right-panel').checked,feedAutoNext:$('pref-feed-next').checked,detailAutoNext:$('pref-detail-next').checked,historySync:$('pref-history-sync').checked,bossPause:$('pref-boss-pause').checked,bossKey:$('pref-boss-key').dataset.value,pinKey:$('pref-pin-key').dataset.value});
       updatePreferences(data);closeSettings();toast('设置已保存，默认布局将在下次进入视频时应用');
     }catch(e){settingsError(e.message);}finally{$('save-settings').disabled=false;}
   });
   $('reset-settings').addEventListener('click',()=>{
     $('pref-web-fullscreen').checked=false;$('pref-right-panel').checked=true;$('pref-boss-pause').checked=true;
     $('pref-history-sync').checked=true;
+    $('pref-feed-next').checked=true;$('pref-detail-next').checked=true;
     for(const [id,key] of [['pref-boss-key','Control+Alt+B'],['pref-pin-key','Control+Alt+P']]){$(id).dataset.value=key;$(id).value=keyLabel(key);}settingsError('');
   });
   for(const input of document.querySelectorAll('[data-shortcut]')) {

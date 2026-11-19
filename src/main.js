@@ -17,8 +17,10 @@ const {createUpdates,repository}=require('./updates');
 const {readGitHubCredential}=require('./github-credentials');
 const {version}=require('../package.json');
 const {createSearch}=require('./search');
+const {createEmbeddedWorkspaces}=require('./embedded-workspaces');
 const SHELL_URL = 'bili-app://shell/';
 let mainWindow, biliSession, siteWindow;
+let embeddedWorkspaces;
 const media = createMediaService(() => biliSession);
 const historySync=createHistorySync(()=>biliSession);
 const personal = createPersonalAPI(apiJSON, accountInfo);
@@ -141,6 +143,8 @@ async function requestData(method, data = {}) {
     case 'save-settings': {
       const result=preferences.save(data);send('settings-changed',result);return result;
     }
+    case 'browser-command': return embeddedWorkspaces.browser(data.action,data.id,data.value);
+    case 'hongguo-command': return embeddedWorkspaces.hongguo(data.action,data.value);
     case 'feed': {
       const rid = category(data.category);
       if(!rid)return recommendations(page);
@@ -293,6 +297,8 @@ async function initialize() {
   const files = new Map([['/', 'index.html'], ['/style.css', 'style.css'], ['/renderer.js', 'renderer.js'], ['/icons.js', 'icons.js'], ['/playback.js','playback.js'], ['/panels.js','panels.js'], ['/video-ui.js','video-ui.js'], ['/shows-ui.js','shows-ui.js'], ['/settings-ui.js','settings-ui.js'], ['/watch-layout.js','watch-layout.js'], ['/vendor/artplayer.js','vendor/artplayer.js'], ['/vendor/shaka.js','vendor/shaka.js'], ['/vendor/danmuku.js','vendor/danmuku.js']]);
   files.set('/progress-ui.js','progress-ui.js');
   files.set('/search-ui.js','search-ui.js');
+  files.set('/stream-feed.js','stream-feed.js');
+  files.set('/extensions-ui.js','extensions-ui.js');
   protocol.handle('bili-app', async (request) => {
     const url = new URL(request.url);
     if (url.hostname === 'shell' && url.pathname.startsWith('/media/')) return media.handle(request);
@@ -310,6 +316,7 @@ async function initialize() {
   });
   mainWindow = new BrowserWindow({ width: 1440, height: 960, minWidth: 720, minHeight: 500, title: 'Bili Lite', backgroundColor: '#f7f8fc', titleBarStyle: 'hidden', titleBarOverlay: { color: '#ffffff', symbolColor: '#333342', height: 46 }, icon: path.join(__dirname, '../assets/icon.png'), show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
   mainWindow.removeMenu();
+  embeddedWorkspaces=createEmbeddedWorkspaces(mainWindow,send);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   bindKeys(mainWindow.webContents);
@@ -324,6 +331,7 @@ async function initialize() {
       case 'theme': applyTheme(value); break;
       case 'login': openSite('https://passport.bilibili.com/login'); break;
       case 'overlay': overlayOpen = value === true; break;
+      case 'extension-layout': embeddedWorkspaces.setLayout(value);break;
       case 'shortcut-capture': captureShortcuts(value===true); break;
       case 'boss': toggleBoss(); break;
       case 'pin': togglePin(); break;

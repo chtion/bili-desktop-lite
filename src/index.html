@@ -10,15 +10,17 @@
 <body>
   <div class="window-tools"><span id="window-video-title"></span><button id="pin-window" class="caption-button" aria-label="置顶播放窗口" title="置顶播放窗口" aria-pressed="false" data-icon="pin" hidden></button></div>
   <header class="topbar">
-    <form id="search-form" role="search"><span data-icon="search"></span><input id="search" aria-label="搜索视频、用户或番剧" placeholder="搜索视频、用户、番剧，或粘贴 BV 链接" autocomplete="off" maxlength="160"><kbd>Ctrl K</kbd><button type="submit" aria-label="搜索">搜索</button></form>
+    <form id="search-form" role="search"><button id="search-toggle" type="button" data-icon="search" aria-label="展开搜索" aria-expanded="true" aria-controls="search-fields" title="搜索（Ctrl+K）"></button><div id="search-fields"><input id="search" aria-label="搜索视频、用户或番剧" placeholder="搜索视频、用户、番剧，或粘贴 BV 链接" autocomplete="off" maxlength="160"><kbd>Ctrl K</kbd><button type="submit" aria-label="搜索">搜索</button></div></form>
     <div class="top-actions"><button id="theme-toggle" class="icon-button" title="切换昼夜主题" aria-label="切换昼夜主题" data-icon="moon"></button></div>
   </header>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo-row"><button class="brand" data-route="home" aria-label="Bili Lite 首页"><span class="brand-symbol" data-icon="video"></span><span class="brand-name">Bili <strong>Lite</strong></span></button></div>
     <div class="sidebar-controls"><button id="app-back" class="icon-button" data-back title="返回" aria-label="返回上一页" data-icon="back" disabled></button><button id="sidebar-toggle" class="icon-button" aria-label="收起侧栏" title="收起侧栏" aria-expanded="true" aria-controls="sidebar" data-icon="panel"></button></div>
+    <div class="sidebar-pages">
     <span class="nav-label">探索世界</span>
     <nav aria-label="主导航">
       <button data-route="home" class="nav-item active"><span data-icon="home"></span><span>发现首页</span><span class="nav-dot"></span></button>
+      <button data-route="swipe" class="nav-item"><span data-icon="swipe"></span><span>刷视频</span></button>
       <button data-route="ranking" class="nav-item"><span data-icon="fire"></span><span>热门榜单</span></button>
       <button data-route="anime" class="nav-item"><span data-icon="film"></span><span>番剧探索</span></button>
     </nav>
@@ -28,6 +30,12 @@
       <button data-route="saved" class="nav-item"><span data-icon="heart"></span><span>本地收藏</span><small id="saved-count">0</small></button>
       <button data-route="history" class="nav-item"><span data-icon="history"></span><span>播放历史</span></button>
     </nav>
+    <span class="nav-label second-label">拓展</span>
+    <nav aria-label="拓展">
+      <button data-route="hongguo" class="nav-item"><span data-icon="film"></span><span>红果短剧</span></button>
+      <button data-route="browser" class="nav-item"><span data-icon="globe"></span><span>内置浏览器</span></button>
+    </nav>
+    </div>
     <div class="sidebar-bottom">
       <button id="settings-button" class="sidebar-settings" aria-label="设置" title="设置"><span data-icon="settings"></span><span>设置</span></button>
       <div class="theme-picker" aria-label="外观主题"><button data-theme-mode="light" title="白天主题" aria-label="白天主题" data-icon="sun"></button><button data-theme-mode="dark" title="夜晚主题" aria-label="夜晚主题" data-icon="moon"></button><button data-theme-mode="system" title="跟随系统" aria-label="跟随系统" data-icon="monitor"></button></div>
@@ -45,6 +53,8 @@
       <section class="settings-section"><h3>播放偏好</h3>
         <label class="setting-row"><span><strong>进入视频时默认网页全屏</strong><small>使用折叠屏式布局，在右侧查看简介和评论</small></span><input type="checkbox" id="pref-web-fullscreen" role="switch"></label>
         <label class="setting-row"><span><strong>默认展开右侧详情</strong><small>播放时仍可随时收起或展开</small></span><input type="checkbox" id="pref-right-panel" role="switch"></label>
+        <label class="setting-row"><span><strong>刷视频自动下一条</strong><small>当前推荐视频播完后继续播放下一条</small></span><input type="checkbox" id="pref-feed-next" role="switch"></label>
+        <label class="setting-row"><span><strong>详情页自动下一集</strong><small>播完后按顺序播放下一分 P、合集视频或番剧</small></span><input type="checkbox" id="pref-detail-next" role="switch"></label>
         <label class="setting-row"><span><strong>老板键隐藏时暂停播放</strong><small>隐藏时始终静音；恢复窗口后可手动继续播放</small></span><input type="checkbox" id="pref-boss-pause" role="switch"></label>
       </section>
       <section class="settings-section"><h3>快捷键</h3><p class="settings-hint">点击输入框后按下组合键。快捷键在应用未聚焦时也能使用。</p>
@@ -86,6 +96,8 @@
   <script src="video-ui.js"></script>
   <script src="shows-ui.js"></script>
   <script src="search-ui.js"></script>
+  <script src="stream-feed.js"></script>
+  <script src="extensions-ui.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

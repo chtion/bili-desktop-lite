@@ -15,7 +15,7 @@ async function main() {
   }
   fs.writeFileSync('dist/bili-release.json',JSON.stringify({version,assets},null,2)+'\n');
   const checksums=Object.values(assets).map(asset=>`${asset.sha256}  ${asset.name}`).join('\n');
-  fs.writeFileSync(`dist/SHA256SUMS-${version.split('.').slice(0,2).join('.')}.txt`,checksums+'\n');
+  fs.writeFileSync(`dist/SHA256SUMS-${version}.txt`,checksums+'\n');
   console.log(`Verified release manifest for ${version}`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

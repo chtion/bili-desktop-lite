@@ -83,7 +83,7 @@ async function fetchReplies(button) {
   } catch(error){if(turn===generation)toast(error.message);}
   finally{button.disabled=false;}
 }
-function startPart(part) {
+function startPart(part, resumeAt) {
   const turn=generation;
   document.querySelectorAll('[data-part]').forEach(b=>b.classList.toggle('active',Number(b.dataset.part)===part));
   route.part=part;
@@ -91,5 +91,34 @@ function startPart(part) {
   NativePlayer.start($('player-slot'),route.bvid,part,message=>{
     if(turn!==generation)return;
     $('play-status').textContent=message;$('play-status').hidden=!message;
-  },route.episodeId,activeVideo);
+  },route.episodeId,activeVideo,{resumeAt,onEnded:state=>playNextPart(state,turn,part)});
+}
+async function playNextPart(state,turn,part) {
+  const stillActive=()=>appPreferences.detailAutoNext&&activeVideo&&turn===generation&&NativePlayer.current===state&&state.art.video.ended;
+  if(!stillActive())return;
+  const {pages,collection,episodeId,bvid}=activeVideo;
+  const partIndex=pages.findIndex(p=>p.page===part);
+  const upcoming=partIndex>=0?pages[partIndex+1]:null;
+  if(upcoming){startPart(upcoming.page,0);return;}
+  if(!collection)return;
+  const matches=item=>episodeId?item.episodeId===episodeId:item.bvid===bvid;
+  const afterCurrent=queue=>{
+    const position=queue.findIndex(matches);
+    return position>=0?queue[position+1]:null;
+  };
+  const given=collection.sections.flatMap(section=>section.items);
+  let next=afterCurrent(collectionItems)||afterCurrent(given);
+  if(!next&&collection.kind==='video'&&collection.count>given.length){
+    let previousFound=false;
+    try{
+      for(let page=1;page<=100&&stillActive();page++){
+        const result=await window.bili.api('collection',{bvid,page});
+        if(!stillActive())return;
+        next=previousFound?result.items[0]:afterCurrent(result.items);
+        if(next||!result.more||!result.items.length)break;
+        previousFound=matches(result.items.at(-1));
+      }
+    }catch(error){if(stillActive())toast(error.message);return;}
+  }
+  if(next&&stillActive())watch(next.bvid,{episodeId:next.episodeId,part:1,resumeAt:0,fullscreen:webMode,replace:true});
 }

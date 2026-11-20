@@ -5,6 +5,8 @@ window.icon = (name, cls = '') => {
     like: '<path d="M7 10v11H3V10h4Zm0 0 4-8c3 0 3 2 2 6h6a2 2 0 0 1 2 2l-2 9a2 2 0 0 1-2 2H7"/>',
     coin: '<circle cx="12" cy="12" r="9"/><path d="M8 8h8m-4 0v9m-4-5h8"/>',
     star: '<path d="m12 2 3 6 7 1-5 5 1 8-6-4-6 4 1-8-5-5 7-1Z"/>',
+    bookmarks: '<path d="M6 4h12v17l-6-4-6 4Z"/>',
+    download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/>',
     pin: '<path d="m8 3 8 0-1 6 4 4v2H5v-2l4-4-1-6ZM12 15v7"/>',
     expand: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
     swipe: '<rect x="5" y="3" width="14" height="18" rx="3"/><path d="m9 9 3-3 3 3m-6 6 3 3 3-3"/>',

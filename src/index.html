@@ -66,12 +66,13 @@
       <section class="settings-section"><h3>播放记录</h3><label class="setting-row"><span><strong>同步到 B站播放历史</strong><small>登录后同步实际观看进度。本机续播始终可用。</small></span><input type="checkbox" id="pref-history-sync" role="switch"></label></section>
       <section class="settings-section" id="update-section">
         <h3>应用更新 <small id="current-version"></small></h3>
-        <p class="settings-hint">读取私有 GitHub Release 时使用本机 Git 登录。</p>
+        <p class="settings-hint">公开发布无需登录。私有发布使用本机 Git 登录。</p>
         <p id="update-status" class="settings-hint" role="status"></p>
         <progress id="update-progress" max="100" aria-label="更新进度" hidden></progress>
         <details id="update-notes" hidden><summary>版本说明</summary><p></p></details>
         <div class="update-controls">
           <button type="button" class="secondary-button" id="check-update">检查 GitHub 更新</button>
+          <button type="button" class="subtle-button" id="update-release-page">GitHub 发布页</button>
           <button type="button" class="subtle-button" id="update-folder">从发布文件夹检查</button>
           <button type="button" class="primary-button" id="install-update" hidden>更新并重启</button>
           <button type="button" class="secondary-button" id="cancel-update" hidden>取消下载</button>

@@ -116,6 +116,7 @@ function initUpdates() {
     finally{lock(false);}
   }
   $('check-update').addEventListener('click',()=>check(false));
+  $('update-release-page').addEventListener('click',()=>window.bili.api('update-release-page').catch(error=>status(error.message)));
   $('update-folder').addEventListener('click',()=>check(true));
   window.bili.onEvent((type,data)=>{
     if(type!=='update-progress')return;

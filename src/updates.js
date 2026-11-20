@@ -11,6 +11,21 @@ const apiBase=`https://api.github.com/repos/${repository}`;
 const versionPattern=/^\d{1,5}\.\d{1,5}\.\d{1,5}$/;
 const digestPattern=/^[a-f0-9]{64}$/;
 const maxSize=512*1024*1024;
+const checkCacheMs=60000;
+const downloadIdleMs=60000;
+class DownloadInterrupted extends Error {}
+
+function rateLimitUntil(response,message='') {
+  const retry=response.headers.get('retry-after');
+  const exhausted=response.headers.get('x-ratelimit-remaining')==='0';
+  if(response.status!==429&&!(response.status===403&&(exhausted||retry||/rate limit/i.test(message))))return 0;
+  const now=Date.now(),seconds=Number(retry);
+  const retryAt=retry?(/^[0-9]+$/.test(retry)?now+seconds*1000:Date.parse(retry)):0;
+  const resetAt=exhausted?Number(response.headers.get('x-ratelimit-reset'))*1000:0;
+  const deadline=Math.max(Number.isFinite(retryAt)?retryAt:0,Number.isFinite(resetAt)?resetAt:0);
+  return deadline>=now?Math.max(now+1000,deadline):now+60000;
+}
+const limitMessage=until=>`GitHub 暂时限制请求，请在约 ${Math.max(1,Math.ceil((until-Date.now())/60000))} 分钟后重试。`;
 
 function assetName(version,mode) {
   return `Bili-Desktop-Lite-${version}-${mode==='portable'?'Portable':'Setup'}-x64.exe`;
@@ -41,6 +56,7 @@ async function verify(file,asset) {
 function createUpdates({app,fetch,chooseFolder,portableFile,version=app.getVersion(),onProgress=()=>{},getCredential=async()=>null}) {
   const current=version,mode=portableFile?'portable':'installer';
   let candidate=null,operation=null,checkGeneration=0;
+  let pendingCheck=null,checked=null,checkBlockedUntil=0,downloadBlockedUntil=0;
   const summary=(message,offer=null)=>({current,message,offer});
   const apiHeaders=accept=>({'User-Agent':`BiliDesktopLite/${current}`,Accept:accept,'X-GitHub-Api-Version':'2022-11-28'});
   function offerFor(update){return summary(`发现 v${update.version}，更新后会重启。`,{version:update.version,source:update.file?'本地发布文件夹':'GitHub Releases',size:update.size,notes:update.notes||''});}
@@ -62,37 +78,49 @@ function createUpdates({app,fetch,chooseFolder,portableFile,version=app.getVersi
     return offerFor(candidate);
   }
 
-  async function check(local=false) {
-    if(operation)throw new Error('更新正在进行。');
-    const turn=++checkGeneration;
-    candidate=null;
-    if(local){const folder=await chooseFolder();return folder?fromFolder(folder,turn):summary('已取消选择。');}
+  async function fromGitHub() {
     const headers=apiHeaders('application/vnd.github+json');
     const latest=extra=>fetch(`${apiBase}/releases/latest`,{credentials:'omit',headers:{...headers,...extra},redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)});
     let result=await latest(),privateRelease=false;
-    if(turn!==checkGeneration)return summary('已发起另一次更新检查。');
     if(result.status===404){
       const token=await getCredential();
-      if(!token)return summary('无法读取 GitHub Releases。私有仓库需要本机 Git 登录，也可以从发布文件夹检查。');
+      if(!token)return {message:'无法读取 GitHub Releases。私有仓库需要本机 Git 登录，也可以从发布文件夹检查。'};
       privateRelease=true;
       result=await latest({Authorization:`Bearer ${token}`});
-      if(result.status===404||result.status===401)return summary('本机 GitHub 登录无法读取此仓库的发布，请检查账号权限。');
+      if(result.status===404||result.status===401)return {message:'本机 GitHub 登录无法读取此仓库的发布，请检查账号权限。'};
     }
-    if(result.status===429||result.status===403&&result.headers.get('x-ratelimit-remaining')==='0')throw new Error('GitHub 暂时限制请求次数，请稍后再试。');
-    if(!result.ok)throw new Error(`GitHub 更新检查暂不可用（HTTP ${result.status}）。`);
+    if(!result.ok){
+      const error=result.status===403?await result.json().catch(()=>null):null;
+      checkBlockedUntil=rateLimitUntil(result,error?.message);
+      if(checkBlockedUntil)throw new Error(limitMessage(checkBlockedUntil));
+      throw new Error(`GitHub 更新检查暂不可用（HTTP ${result.status}）。`);
+    }
     const release=await result.json(),tag=String(release.tag_name||''),version=tag.replace(/^v/,'');
-    if(turn!==checkGeneration)return summary('已发起另一次更新检查。');
     if(!validVersion(version)||release.draft||release.prerelease)throw new Error('未找到有效的公开发布。');
-    if(outsideDevelopmentLine(version,current))return summary('公开发布仍使用旧编号。可以从 0.x 发布文件夹检查。');
-    if(!newer(version,current))return summary('当前已经是最新公开版本。');
+    if(outsideDevelopmentLine(version,current))return {message:'公开发布仍使用旧编号。可以从 0.x 发布文件夹检查。',cache:true};
+    if(!newer(version,current))return {message:'当前已经是最新公开版本。',cache:true};
     const found=(release.assets||[]).find(a=>a.name===assetName(version,mode)&&a.state==='uploaded');
     if(!found)throw new Error('这个版本未发布适用于当前安装方式的 EXE。');
     const asset=validateAsset(version,mode,{name:found.name,size:found.size,sha256:String(found.digest||'').replace(/^sha256:/,'')});
     const url=`https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${asset.name}`;
     if(found.browser_download_url!==url)throw new Error('发布包下载地址不匹配。');
     if(privateRelease&&(!Number.isSafeInteger(found.id)||found.id<=0))throw new Error('私有发布缺少有效的下载编号。');
-    candidate={...asset,version,url,privateAssetId:privateRelease?found.id:null,notes:typeof release.body==='string'?release.body.trim().slice(0,1600):''};
-    return offerFor(candidate);
+    return {cache:true,update:{...asset,version,url,privateAssetId:privateRelease?found.id:null,notes:typeof release.body==='string'?release.body.trim().slice(0,1600):''}};
+  }
+
+  async function check(local=false) {
+    if(operation)throw new Error('更新正在进行。');
+    const turn=++checkGeneration;
+    candidate=null;
+    if(local){const folder=await chooseFolder();return folder?fromFolder(folder,turn):summary('已取消选择。');}
+    if(Date.now()<checkBlockedUntil)throw new Error(limitMessage(checkBlockedUntil));
+    const data=checked?.until>Date.now()?checked.data:await (pendingCheck??=fromGitHub().then(result=>{
+      if(result.cache)checked={until:Date.now()+checkCacheMs,data:result};
+      return result;
+    }).finally(()=>{pendingCheck=null;}));
+    if(turn!==checkGeneration)return summary('已发起另一次更新检查。');
+    candidate=data.update||null;
+    return candidate?offerFor(candidate):summary(data.message);
   }
 
   function report(task,phase,bytes=0) {
@@ -106,40 +134,82 @@ function createUpdates({app,fetch,chooseFolder,portableFile,version=app.getVersi
     return url.href;
   }
 
-  async function attachment(update,signal) {
-    if(!update.privateAssetId)return fetch(update.url,{credentials:'omit',signal,cache:'no-store'});
-    const token=await getCredential();
-    if(!token)throw new Error('本机 GitHub 登录已不可用，请登录之后重新检查。');
-    const response=await fetch(`${apiBase}/releases/assets/${update.privateAssetId}`,{
-      credentials:'omit',signal,cache:'no-store',redirect:'manual',
-      headers:{...apiHeaders('application/octet-stream'),Authorization:`Bearer ${token}`}
-    });
-    if(response.status>=300&&response.status<400){
-      const location=response.headers.get('location');
-      if(!location)throw new Error('GitHub 未返回私有附件下载地址。');
-      // Signed storage URLs never receive the GitHub credential.
-      return fetch(downloadDestination(location),{credentials:'omit',signal,cache:'no-store'});
+  async function attachment(update,signal,offset) {
+    const options={credentials:'omit',signal,cache:'no-store',redirect:'manual',headers:{'Accept-Encoding':'identity'}};
+    if(offset)options.headers.Range=`bytes=${offset}-`;
+    let url=update.url,headers=options.headers;
+    if(update.privateAssetId){
+      const token=await getCredential();
+      if(!token)throw new Error('本机 GitHub 登录已不可用，请登录之后重新检查。');
+      url=`${apiBase}/releases/assets/${update.privateAssetId}`;
+      headers={...headers,...apiHeaders('application/octet-stream'),Authorization:`Bearer ${token}`};
     }
-    return response;
+    for(let redirects=0;redirects<4;redirects++){
+      let response;
+      try{response=await fetch(url,{...options,headers});}catch{throw new DownloadInterrupted('无法连接 GitHub 下载，请检查网络后重试。');}
+      if(response.status<300||response.status>=400)return response;
+      const location=response.headers.get('location');
+      if(!location)throw new Error('GitHub 未返回附件下载地址。');
+      await response.body?.cancel();
+      url=downloadDestination(new URL(location,url).href);
+      headers=options.headers;
+    }
+    throw new Error('GitHub 附件下载地址重定向次数过多。');
+  }
+
+  async function transfer(update,temporary,task,offset) {
+    const idle=new AbortController();
+    let timeout,lastReport=0;
+    const activity=()=>{clearTimeout(timeout);timeout=setTimeout(()=>idle.abort(),downloadIdleMs);};
+    const signal=AbortSignal.any([task.abort.signal,idle.signal]);
+    activity();
+    try{
+      const response=await attachment(update,signal,offset);
+      if(!response.ok||!response.body||response.headers.get('content-type')?.includes('json')){
+        const error=response.status===403&&response.headers.get('content-type')?.includes('json')?await response.json().catch(()=>null):null;
+        downloadBlockedUntil=rateLimitUntil(response,error?.message);
+        if(!response.bodyUsed)await response.body?.cancel();
+        if(downloadBlockedUntil)throw new Error(limitMessage(downloadBlockedUntil));
+        if(response.status>=500)throw new DownloadInterrupted(`GitHub 下载暂时不可用（HTTP ${response.status}）。`);
+        throw new Error(`GitHub 下载失败（HTTP ${response.status}）。`);
+      }
+      const partial=response.status===206;
+      const expectedRange=`bytes ${offset}-${update.size-1}/${update.size}`;
+      if(response.status!==200&&(!partial||!offset||response.headers.get('content-range')!==expectedRange)){
+        await response.body.cancel();
+        throw new Error('GitHub 返回的续传范围与发布信息不一致。');
+      }
+      let seen=partial?offset:0;
+      report(task,'downloading',seen);
+      const bound=new Transform({transform(buffer,_encoding,callback){
+        activity();seen+=buffer.length;
+        if(seen>update.size)return callback(new Error('下载大小与发布信息不一致。'));
+        if(Date.now()-lastReport>=180){lastReport=Date.now();report(task,'downloading',seen);}
+        callback(null,buffer);
+      }});
+      const source=Readable.fromWeb(response.body);
+      let readFailure;
+      source.on('error',error=>{readFailure=error;});
+      try{await pipeline(source,bound,createWriteStream(temporary,{flags:partial?'a':'w'}),{signal});}
+      catch(error){
+        if(idle.signal.aborted)throw new DownloadInterrupted('GitHub 下载超过 1 分钟没有收到数据。');
+        if(error===readFailure&&error instanceof TypeError)throw new DownloadInterrupted('GitHub 下载连接中断。');
+        throw error;
+      }
+      if(seen!==update.size)throw new DownloadInterrupted('GitHub 下载连接提前结束。');
+    }finally{clearTimeout(timeout);}
   }
 
   async function download(update,temporary,task) {
+    if(Date.now()<downloadBlockedUntil)throw new Error(limitMessage(downloadBlockedUntil));
     report(task,'downloading');
-    const signal=AbortSignal.any([task.abort.signal,AbortSignal.timeout(480000)]);
-    const response=await attachment(update,signal);
-    const destination=new URL(response.url||update.url);
-    if(!response.ok||!response.body||response.headers.get('content-type')?.includes('json')) {
-      throw new Error(`GitHub 下载失败（HTTP ${response.status}）。`);
+    for(let attempt=0;attempt<3;attempt++){
+      task.abort.signal.throwIfAborted();
+      const offset=(await fs.stat(temporary).catch(error=>{if(error.code!=='ENOENT')throw error;}))?.size||0;
+      if(offset===update.size)return;
+      try{await transfer(update,temporary,task,offset);return;}
+      catch(error){if(task.abort.signal.aborted||!(error instanceof DownloadInterrupted)||attempt===2)throw error;}
     }
-    if(!update.privateAssetId||destination.origin!=='https://api.github.com')downloadDestination(destination.href);
-    let seen=0,lastReport=0;
-    const bound=new Transform({transform(buffer,_encoding,callback){
-      seen+=buffer.length;
-      if(seen>update.size)return callback(new Error('下载大小与发布信息不一致。'));
-      if(Date.now()-lastReport>=180){lastReport=Date.now();report(task,'downloading',seen);}
-      callback(null,buffer);
-    }});
-    await pipeline(Readable.fromWeb(response.body),bound,createWriteStream(temporary,{flags:'wx'}),{signal});
   }
 
   async function existing(file,update) {

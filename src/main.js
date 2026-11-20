@@ -152,6 +152,7 @@ async function requestData(method, data = {}) {
     }
     case 'update-info': return updates.info();
     case 'check-update': return updates.check(data.local===true);
+    case 'update-release-page': return shell.openExternal(`https://github.com/${repository}/releases/latest`);
     case 'install-update': return updates.install();
     case 'cancel-update': return updates.cancel();
     case 'settings': return preferences.get();
@@ -159,6 +160,7 @@ async function requestData(method, data = {}) {
       const result=preferences.save(data);send('settings-changed',result);return result;
     }
     case 'browser-command': return embeddedWorkspaces.browser(data.action,data.id,data.value);
+    case 'browser-download': return embeddedWorkspaces.download(data.action,data.id);
     case 'hongguo': return imported(data.sourceId)?dramaImports.browse(data.method,data):hongguo.request(data.method,data);
     case 'hongguo-official': return external(officialURL(data.seriesId,data.episodeId));
     case 'drama-sources': return dramaImports.command(data.action,data.value);

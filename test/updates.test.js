@@ -56,6 +56,32 @@ test('GitHub updater rejects assets without a digest or with a foreign download 
   await assert.rejects(updates.check(),/下载地址不匹配/);
 });
 
+test('GitHub release checks share the request and reuse a fresh result',async()=>{
+  let calls=0;
+  const updates=createUpdates({app:{getVersion:()=> '0.10.4'},fetch:async()=>{
+    calls++;
+    return Response.json({tag_name:'v0.10.4'});
+  }});
+  await Promise.all([updates.check(),updates.check()]);
+  assert.match((await updates.check()).message,/最新/);
+  assert.equal(calls,1);
+});
+
+test('REST rate limits suppress repeated requests until GitHub permits a retry',async()=>{
+  const responses=[
+    new Response(null,{status:429,headers:{'Retry-After':'180'}}),
+    Response.json({message:'You have exceeded a secondary rate limit'},{status:403}),
+    Response.json({message:'API rate limit exceeded'},{status:403,headers:{'X-RateLimit-Remaining':'0','X-RateLimit-Reset':String(Math.ceil(Date.now()/1000)+300)}})
+  ];
+  for(const response of responses){
+    let calls=0;
+    const updates=createUpdates({app:{getVersion:()=> '0.10.4'},fetch:async()=>{calls++;return response;}});
+    await assert.rejects(updates.check(),/GitHub 暂时限制请求.*分钟/);
+    await assert.rejects(updates.check(),/GitHub 暂时限制请求.*分钟/);
+    assert.equal(calls,1);
+  }
+});
+
 test('a private Release uses the Git login only on the API and verifies the file before running the installer',async t=>{
   if(process.platform!=='win32')return;
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'bili-private-release-test-'));
@@ -119,4 +145,32 @@ test('cancel removes the partial download and allows a fresh retry',async t=>{
   block=false;
   await updates.install();
   assert.equal(launches,1);
+});
+
+test('interrupted public download resumes from the saved bytes and verifies the complete file',async t=>{
+  if(process.platform!=='win32')return;
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'bili-resume-test-'));
+  t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const version='0.10.5',name=assetName(version,'portable'),bytes=Buffer.from('fixture with partial download and resume');
+  const digest='sha256:'+createHash('sha256').update(bytes).digest('hex');
+  const url=`https://github.com/chtion/bili-desktop-lite/releases/download/v${version}/${name}`;
+  const cdn='https://release-assets.githubusercontent.com/fixture';
+  const ranges=[];
+  let launched;
+  const updates=createUpdates({
+    app:{getVersion:()=> '0.10.4',isPackaged:true,relaunch(options){launched=options;},quit(){}},portableFile:path.join(root,'old.exe'),
+    getCredential:async()=>{throw new Error('Unexpected credential request');},
+    fetch:async(endpoint,options)=>{
+      if(endpoint.endsWith('/latest'))return Response.json({tag_name:`v${version}`,assets:[{name,state:'uploaded',size:bytes.length,digest,browser_download_url:url}]});
+      if(endpoint===url)return Response.redirect(cdn,302);
+      assert.equal(endpoint,cdn);
+      ranges.push(options.headers.Range);
+      if(ranges.length===1)return new Response(bytes.subarray(0,8));
+      return new Response(bytes.subarray(8),{status:206,headers:{'Content-Range':`bytes 8-${bytes.length-1}/${bytes.length}`}});
+    }
+  });
+  await updates.check();
+  assert.deepEqual(await updates.install(),{restarting:true});
+  assert.deepEqual(ranges,[undefined,'bytes=8-']);
+  assert.deepEqual(await fs.readFile(launched.execPath),bytes);
 });

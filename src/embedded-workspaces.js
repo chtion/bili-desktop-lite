@@ -1,5 +1,6 @@
 'use strict';
-const {WebContentsView,session}=require('electron');
+const {app,Menu,WebContentsView,session,shell}=require('electron');
+const {createBrowserLibrary}=require('./browser-library');
 
 function webURL(value) {
   try {
@@ -24,13 +25,15 @@ function createEmbeddedWorkspaces(window,send) {
   const browserSession=session.fromPartition('persist:lite-browser');
   browserSession.setPermissionRequestHandler((_contents,_name,respond)=>respond(false));
   browserSession.setPermissionCheckHandler(()=>false);
-  browserSession.on('will-download',event=>event.preventDefault());
   const tabs=new Map();
+  const library=createBrowserLibrary({directory:app.getPath('userData'),downloadsDirectory:app.getPath('downloads'),
+    session:browserSession,ownsContents:contents=>[...tabs.values()].some(tab=>tab.view.webContents===contents),
+    send,reveal:file=>shell.showItemInFolder(file),webURL});
   let lastId=0, activeId=null, activeView=null, layout=null;
 
   const browserCurrent=()=>tabs.get(activeId);
   function browserState() {
-    return {activeId,tabs:[...tabs.values()].map(tab=>{
+    return {activeId,bookmarks:library.bookmarks(),tabs:[...tabs.values()].map(tab=>{
       const contents=tab.view.webContents;
       return {id:tab.id,url:tab.url,title:tab.title||'新标签页',loading:contents.isLoading(),error:tab.error,
         canBack:contents.navigationHistory.canGoBack(),canForward:contents.navigationHistory.canGoForward()};
@@ -79,6 +82,12 @@ function createEmbeddedWorkspaces(window,send) {
     contents.setWindowOpenHandler(({url})=>{
       if(webURL(url))newTab(url);
       return {action:'deny'};
+    });
+    contents.on('context-menu',(_event,params)=>{
+      const entries=[];
+      if(webURL(params.linkURL))entries.push({label:'链接另存为…',click:()=>contents.downloadURL(params.linkURL)});
+      if(params.mediaType==='image'&&webURL(params.srcURL))entries.push({label:'图片另存为…',click:()=>contents.downloadURL(params.srcURL)});
+      if(entries.length)Menu.buildFromTemplate(entries).popup({window});
     });
     contents.on('did-fail-load',(_event,code,_message,_url,mainFrame)=>{
       if(mainFrame&&code!==-3){item.error='网页暂时无法打开。';syncView();emit();}
@@ -129,6 +138,10 @@ function createEmbeddedWorkspaces(window,send) {
       syncView();removed.view.webContents.close();
     }
     if(action==='go')load(item,addressURL(value));
+    if(['bookmark','open-bookmark','remove-bookmark','rename-bookmark'].includes(action)){
+      const url=library.bookmark(action,id,value,item);
+      if(url)load(item,url);
+    }
     if(action==='back'&&history.canGoBack())history.goBack();
     if(action==='forward'&&history.canGoForward())history.goForward();
     if(action==='refresh'&&item.url){if(item.error)load(item,item.url);else contents.reload();}
@@ -142,7 +155,8 @@ function createEmbeddedWorkspaces(window,send) {
     for(const {view} of pages){
       if(!view.webContents.isDestroyed())view.webContents.close();
     }
+    library.dispose();
   });
-  return {browser,setLayout};
+  return {browser,download:library.download,setLayout};
 }
 module.exports={createEmbeddedWorkspaces};

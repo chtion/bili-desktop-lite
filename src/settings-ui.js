@@ -1,6 +1,6 @@
 'use strict';
 let appPreferences={webFullscreen:false,rightPanel:true,feedAutoNext:true,detailAutoNext:true,historySync:true,bossPause:true,bossKey:'Control+Alt+B',pinKey:'Control+Alt+P'};
-let preferencesReady, bossIsHidden=false, settingsFocus;
+let preferencesReady, bossIsHidden=false, settingsFocus, pinPending=false;
 const keyLabel=key=>key.replaceAll('Control','Ctrl');
 function updatePreferences(data) {
   appPreferences=data.values;
@@ -14,6 +14,15 @@ function updatePinState({pinned}) {
     button.title=label+(appPreferences.pinKey?' · '+keyLabel(appPreferences.pinKey):'');
   }
   if($('pin-playback'))$('pin-playback').innerHTML=icon('pin')+(pinned?'已置顶':'置顶');
+}
+async function togglePlaybackPin() {
+  if(pinPending)return;
+  pinPending=true;
+  try {
+    const {pinned}=await window.bili.api('pin-window');
+    updatePinState({pinned});
+  }catch(error){toast(error.message);}
+  finally{pinPending=false;}
 }
 function populateSettings() {
   $('pref-web-fullscreen').checked=appPreferences.webFullscreen;
@@ -70,13 +79,21 @@ function initSettings() {
       if(['Control','Alt','Shift','Meta'].includes(event.key))return;
       const key=event.code.replace(/^Key|^Digit/,'');
       if(event.metaKey || !/^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4]))$/.test(key)){settingsError('请使用字母、数字或功能键，不使用 Windows 键。');return;}
-      if(!event.ctrlKey && !event.altKey && !/^F\d+$/.test(key)){settingsError('字母和数字需要搭配 Ctrl 或 Alt。');return;}
       input.dataset.value=[event.ctrlKey?'Control':'',event.altKey?'Alt':'',event.shiftKey?'Shift':'',key].filter(Boolean).join('+');
       settingsError('');input.blur();
     });
   }
   document.querySelectorAll('[data-clear-shortcut]').forEach(b=>b.addEventListener('click',()=>{const input=$(b.dataset.clearShortcut);input.dataset.value='';input.value='';}));
-  $('pin-window').addEventListener('click',()=>window.bili.command('pin'));
+  $('pin-window').addEventListener('click',togglePlaybackPin);
+  document.addEventListener('keydown',event=>{
+    if(event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.altKey||event.metaKey||
+       document.querySelector('dialog[open]')||event.target.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])'))return;
+    const value=event.code.match(/^(?:Key|Digit)([A-Z0-9])$/)?.[1];
+    if(!value)return;
+    const key=(event.shiftKey?'Shift+':'')+value;
+    if(key===appPreferences.bossKey){event.preventDefault();event.stopImmediatePropagation();window.bili.command('boss');}
+    else if(key===appPreferences.pinKey&&!$('pin-window').hidden){event.preventDefault();event.stopImmediatePropagation();void togglePlaybackPin();}
+  },true);
   window.addEventListener('focus',()=>{if($('settings-dialog').open && document.activeElement?.dataset.shortcut)window.bili.command('shortcut-capture',true);});
   initUpdates();
 }

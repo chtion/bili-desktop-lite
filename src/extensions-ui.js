@@ -1,9 +1,6 @@
 'use strict';
 const Extensions=(()=>{
   let mode=null, observer, epoch=0, browserState={tabs:[],activeId:null};
-  let red={section:'home'}, redError='', busy=false;
-  let recent, favorites;
-
   function layout() {
     const slot=$('extension-slot');
     if(!mode||!slot)return;
@@ -13,7 +10,7 @@ const Extensions=(()=>{
   }
   function leave() {
     if(!mode)return;
-    mode=null;epoch++;busy=false;
+    mode=null;epoch++;
     observer?.disconnect();
     $('workspace').classList.remove('embedded-workspace');
     window.bili.command('extension-layout',null);
@@ -68,109 +65,18 @@ const Extensions=(()=>{
     renderBrowser();browser('state');
   }
 
-  function rememberRed() {
-    if(!red.isPlayer||!red.title)return;
-    const title=red.title.slice(0,160);
-    recent=[{url:red.url,title},...recent.filter(item=>item.url!==red.url)].slice(0,50);
-    storage.write('hongguo-recent',recent);
-  }
-  function redList(items) {
-    return items.length?items.map((item,index)=>`<button class="subtle-button" data-red-item="${index}">${icon('play')} ${esc(item.title)}</button>`).join(''):'<p class="muted">暂无记录</p>';
-  }
-  function renderRed() {
-    if(mode!=='hongguo')return;
-    const {section,isPlayer,index,total,canBack,url}=red;
-    document.querySelectorAll('[data-red-section]').forEach(button=>{
-      const selected=button.dataset.redSection===section||(section==='saved'&&button.dataset.redSection==='mine');
-      button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
-    });
-    const mine=$('red-mine');
-    mine.hidden=section!=='mine';
-    $('red-categories').hidden=section!=='category';
-    $('red-swipe').hidden=section!=='recommended';
-    $('red-prev').disabled=busy||!total||index===0;
-    $('red-next').disabled=busy||!total||index>=total-1;
-    $('red-position').textContent=total?`${index+1} / ${total}`:'';
-    $('red-back').disabled=!canBack;
-    $('red-refresh').hidden=section==='mine';
-    $('red-save').hidden=!isPlayer;
-    const saved=favorites.some(item=>item.url===url);
-    $('red-save').setAttribute('aria-pressed',String(saved));
-    $('red-save').title=saved?'取消收藏':'收藏本集';
-    $('red-save').setAttribute('aria-label',$('red-save').title);
-    $('red-save').classList.toggle('selected',saved);
-    if(section==='mine'){
-      mine.innerHTML=`<div><h2>本机收藏</h2><div class="red-list" data-red-list="favorites">${redList(favorites)}</div></div>
-        <div><h2>最近打开</h2><div class="red-list" data-red-list="recent">${redList(recent)}</div></div>`;
-      setTabNotice('');$('extension-slot').hidden=true;layout();return;
-    }
-    setTabNotice(redError||red.error||(url?'':'正在连接红果官网…'));
-  }
-  async function hongguo(action,value) {
-    const turn=epoch;
-    if(action==='step'&&busy)return;
-    redError='';busy=action==='step';
-    renderRed();
-    try{
-      const result=await window.bili.api('hongguo-command',{action,value});
-      if(turn!==epoch)return;
-      red=result;rememberRed();
-    }catch(error){if(turn===epoch)redError=error.message;}
-    finally{if(turn===epoch){busy=false;renderRed();}}
-  }
-  function redMarkup() {
-    return `<section class="extension-frame hongguo-frame" aria-label="红果短剧">
-      <div class="red-toolbar"><strong>${icon('film')} 红果短剧</strong><div class="red-nav" aria-label="红果导航">
-      ${[['home','首页'],['category','分类'],['recommended','推荐'],['mine','我的']].map(([section,label])=>`<button type="button" data-red-section="${section}" aria-pressed="false">${label}</button>`).join('')}
-      </div><div class="red-tools">
-      <button type="button" class="icon-button" id="red-back" aria-label="短剧网页后退" title="短剧网页后退" disabled>${icon('back')}</button>
-      <button type="button" class="icon-button" id="red-refresh" aria-label="刷新红果" title="刷新红果">${icon('refresh')}</button>
-      <button type="button" class="icon-button" id="red-save" aria-label="收藏本集" title="收藏本集" hidden>${icon('heart')}</button>
-      </div></div>
-      <div id="red-categories" class="red-subbar" hidden>${[['real-drama','真人剧'],['comic-drama','漫剧'],['ai-drama','AI 剧'],['comic','漫画']].map(([key,label])=>`<button type="button" class="subtle-button" data-red-category="${key}">${label}</button>`).join('')}</div>
-      <div id="red-swipe" class="red-subbar" hidden><span>官网推荐</span><button type="button" class="subtle-button" id="red-prev">${icon('previous')}上一部</button><span id="red-position"></span><button type="button" class="subtle-button" id="red-next">下一部${icon('next')}</button></div>
-      <div class="extension-page"><div id="red-mine" class="red-mine" hidden></div><div id="extension-slot"></div><div id="extension-notice" class="extension-notice" role="status"></div></div></section>`;
-  }
-  function bindRed() {
-    recent=storage.read('hongguo-recent',[]);
-    favorites=storage.read('hongguo-favorites',[]);
-    document.querySelector('.hongguo-frame').onclick=event=>{
-      const button=event.target.closest('button');
-      if(!button)return;
-      if(button.dataset.redSection)hongguo('section',button.dataset.redSection);
-      if(button.dataset.redCategory)hongguo('category',button.dataset.redCategory);
-      if(button.dataset.redItem!==undefined){
-        const list=button.closest('[data-red-list]').dataset.redList==='recent'?recent:favorites;
-        hongguo('open',list[Number(button.dataset.redItem)]?.url);
-      }
-    };
-    $('red-prev').onclick=()=>hongguo('step',-1);
-    $('red-next').onclick=()=>hongguo('step',1);
-    $('red-back').onclick=()=>hongguo('back');
-    $('red-refresh').onclick=()=>hongguo('refresh');
-    $('red-save').onclick=()=>{
-      if(!red.isPlayer)return;
-      const index=favorites.findIndex(item=>item.url===red.url);
-      if(index>=0)favorites.splice(index,1);
-      else favorites.unshift({url:red.url,title:red.title||'红果短剧'});
-      storage.write('hongguo-favorites',favorites.slice(0,200));renderRed();
-    };
-    hongguo('section',red.section==='saved'?'mine':red.section);
-  }
-  function mount(name) {
-    mode=name;
+  function mount() {
+    mode='browser';
     $('workspace').classList.add('embedded-workspace');
-    $('content').innerHTML=name==='browser'?browserMarkup():redMarkup();
+    $('content').innerHTML=browserMarkup();
     observer=new ResizeObserver(layout);
     observer.observe($('extension-slot'));
     layout();
-    if(name==='browser')bindBrowser();else bindRed();
+    bindBrowser();
     return true;
   }
   function event(type,value) {
     if(type==='browser-state'){browserState=value;renderBrowser();return true;}
-    if(type==='hongguo-state'){red=value;if(mode==='hongguo'){rememberRed();renderRed();}return true;}
-    if(type==='extension-error'){if(mode)toast(value);return true;}
     if(mode==='browser'&&['focus-address','focus-search'].includes(type)){focusAddress();return true;}
     if(type==='resize')layout();
     return false;
@@ -187,5 +93,5 @@ const Extensions=(()=>{
       requestAnimationFrame(frame);
     });
   });
-  return {mount,leave,event,refresh:()=>mode==='browser'?browser('refresh'):hongguo('refresh')};
+  return {mount,leave,event,refresh:()=>browser('refresh')};
 })();

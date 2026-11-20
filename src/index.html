@@ -60,7 +60,7 @@
       <section class="settings-section"><h3>快捷键</h3><p class="settings-hint">点击输入框后按下组合键。快捷键在应用未聚焦时也能使用。</p>
         <div class="shortcut-row"><label for="pref-boss-key"><strong>老板键</strong><small>隐藏 / 恢复窗口</small></label><input id="pref-boss-key" data-shortcut="bossKey" aria-label="录制老板键" readonly placeholder="未设置"><button type="button" data-clear-shortcut="pref-boss-key" class="subtle-button">清除</button></div>
         <div class="shortcut-row"><label for="pref-pin-key"><strong>置顶播放</strong><small>视频页中切换窗口置顶</small></label><input id="pref-pin-key" data-shortcut="pinKey" aria-label="录制置顶快捷键" readonly placeholder="未设置"><button type="button" data-clear-shortcut="pref-pin-key" class="subtle-button">清除</button></div>
-        <p id="shortcut-hint" class="settings-hint">支持 Ctrl / Alt / Shift 组合，或单独的功能键；Esc 取消录制。</p>
+        <p id="shortcut-hint" class="settings-hint">支持单键和组合键。单个字母或数字只在本窗口生效，隐藏后可从托盘恢复。功能键及 Ctrl / Alt 组合可在后台使用。Esc 取消录制。</p>
       </section>
       <section class="settings-section appearance-section"><h3>外观</h3><div class="settings-themes"><button type="button" data-theme-mode="light">白天</button><button type="button" data-theme-mode="dark">夜晚</button><button type="button" data-theme-mode="system">跟随系统</button></div></section>
       <section class="settings-section"><h3>播放记录</h3><label class="setting-row"><span><strong>同步到 B站播放历史</strong><small>登录后同步实际观看进度。本机续播始终可用。</small></span><input type="checkbox" id="pref-history-sync" role="switch"></label></section>
@@ -98,6 +98,8 @@
   <script src="search-ui.js"></script>
   <script src="stream-feed.js"></script>
   <script src="extensions-ui.js"></script>
+  <script src="hongguo-collection.js"></script>
+  <script src="hongguo-ui.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

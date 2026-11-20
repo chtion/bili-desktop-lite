@@ -8,18 +8,20 @@ function rememberRoute(next,replace=false) {
     navigationStack.push({...route});if(navigationStack.length>60)navigationStack.shift();
   }
 }
-function updateBackButton() {$('app-back').disabled=!navigationStack.length && !$('settings-dialog').open;}
+function updateBackButton() {$('app-back').disabled=!navigationStack.length && !$('settings-dialog').open && !Hongguo.canGoBack();}
 function goBack() {
   if($('action-dialog').open){closeAction();return;}
   if($('settings-dialog').open){closeSettings();return;}
   if(!$('account-panel').hidden){closeAccount();return;}
+  if(Hongguo.back())return;
   const target=navigationStack.pop();if(!target)return;
   if(target.name==='watch')watch(target.bvid,{replace:true,part:target.part,episodeId:target.episodeId});
-  else navigate(target.name,target,{replace:true});
+  else navigate(target.name,target,{replace:true,restore:target.name==='home'});
 }
 function openHome() {
   if(route.name==='home' && !route.category){refreshRoute();return;}
-  navigate('home',{page:homeBatch>=100?1:homeBatch+1});
+  const category=route.name==='home'?0:lastHomeCategory;
+  navigate('home',{category},{restore:true});
 }
 function setRightPanel(open) {
   rightPanelOpen=open;

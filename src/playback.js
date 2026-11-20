@@ -51,22 +51,23 @@ const NativePlayer = (() => {
     const state = { disposed: false, engine: null, art: null, token: null };
     current = state;
     try {
-      const source = await window.bili.api('playback', { bvid, part, episodeId });
-      if (turn !== revision) { window.bili.api('release-media', {token:source.token}).catch(()=>{}); return; }
+      const source = options.getSource ? await options.getSource() : await window.bili.api('playback', { bvid, part, episodeId });
+      if (turn !== revision) { if(source.token)window.bili.api('release-media', {token:source.token}).catch(()=>{}); return; }
+      if (source.message) {onStatus(source.message);return;}
       state.token = source.token;
       state.source=source;
       state.syncEnabled=source.syncEnabled;
       const startAt=options.resumeAt ?? PlaybackProgress.startTime(source.bvid,source.episodeId,source.cid);
       container.replaceChildren();
       const status = message => { if (!state.disposed) onStatus(message); };
-      const loadDash = async (video, url, art) => {
+      const loadAdaptive = async (video, url, art) => {
         const engine = state.engine = new shaka.Player();
         engine.configure({ abr: {enabled:true}, streaming: {bufferingGoal:30,rebufferingGoal:2}, manifest:{dash:{ignoreMinBufferTime:true}} });
         engine.addEventListener('error', e => { if (e.detail.severity === shaka.util.Error.Severity.CRITICAL) status('播放连接中断，请点击重试。'); });
         try {
           await engine.attach(video);
           if (state.disposed) return;
-          await engine.load(url, startAt||undefined, 'application/dash+xml');
+          await engine.load(url, startAt||undefined, source.type==='hls'?'application/vnd.apple.mpegurl':'application/dash+xml');
           if (state.disposed) return;
           const seen = new Set();
           const tracks = engine.getVariantTracks().sort((a,b)=>b.height-a.height).filter(t => { if(seen.has(t.height))return false;seen.add(t.height);return true; });
@@ -80,12 +81,12 @@ const NativePlayer = (() => {
       let selectSubtitle=()=>{};
       const subtitles=playerMenu(state,'字幕',[{label:'正在加载字幕…',disabled:true}],item=>selectSubtitle(item));
       state.art = new Artplayer({
-        container, url: source.url, type: source.type, customType: {mpd:loadDash},
+        container, url: source.url, type: source.type, customType: {mpd:loadAdaptive,hls:loadAdaptive},
         lang:'zh-cn', theme:'#ef608d', volume:0.7, autoplay:!suspended, autoSize:false,
         setting:true, playbackRate:false, aspectRatio:true, pip:true, fullscreen:true,
         fullscreenWeb:false, hotkey:true, lock:true, moreVideoAttr:{crossOrigin:'anonymous'},
-        controls:[{name:'bili-rate',position:'right',index:14,html:rate.root},{name:'bili-captions',position:'right',index:15,html:subtitles.root},...(!options.swipe?[{name:'app-fullscreen',position:'right',index:20,html:icon('expand'),tooltip:'网页全屏 / 退出',click:()=>window.dispatchEvent(new Event('toggle-web-fullscreen'))}]:[])],
-        plugins:[artplayerPluginDanmuku({danmuku:async()=>{
+        controls:[{name:'bili-rate',position:'right',index:14,html:rate.root},...(!options.getSource?[{name:'bili-captions',position:'right',index:15,html:subtitles.root}]:[]),...(!options.swipe&&!options.getSource?[{name:'app-fullscreen',position:'right',index:20,html:icon('expand'),tooltip:'网页全屏 / 退出',click:()=>window.dispatchEvent(new Event('toggle-web-fullscreen'))}]:[])],
+        plugins:options.getSource?[]:[artplayerPluginDanmuku({danmuku:async()=>{
           try {
             const {xml}=await window.bili.api('danmaku',{cid:source.cid});
             if(state.disposed)return [];
@@ -102,14 +103,15 @@ const NativePlayer = (() => {
       const video=state.art.video;
       state.menuEvents=new AbortController();
       document.addEventListener('pointerdown',event=>{if(!event.target.closest('.bili-player-picker'))dismissMenu();},{signal:state.menuEvents.signal});
-      state.saveProgress=PlaybackProgress.track(state,metadata,part,video);
+      state.saveProgress=options.track ? options.track(video) : PlaybackProgress.track(state,metadata,part,video);
       video.addEventListener('ended',()=>{if(!state.disposed&&!suspended)options.onEnded?.(state);});
       if(startAt){
-        if(source.type!=='mpd')video.addEventListener('loadedmetadata',()=>{if(startAt<video.duration-2)video.currentTime=startAt;},{once:true});
+        if(source.type==='mp4')video.addEventListener('loadedmetadata',()=>{if(startAt<video.duration-2)video.currentTime=startAt;},{once:true});
         video.addEventListener('playing',()=>{if(Math.abs(video.currentTime-startAt)<3)state.art.notice.show=`已续播至 ${duration(Math.floor(startAt))}`;},{once:true});
       }
       video.addEventListener('ratechange',()=>{rate.toggle.textContent=video.playbackRate===1?'倍速':`${video.playbackRate}×`;});
       state.art.on('error',()=>status('视频暂时无法播放，请点击重试。'));
+      if(options.getSource)return;
       const captions=document.createElement('div');captions.className='bili-subtitles';captions.setAttribute('aria-live','off');state.art.template.$player.append(captions);
       state.subtitleCues=[];state.subtitleRevision=0;
       state.art.on('video:timeupdate',()=>{const t=state.art.video.currentTime;captions.textContent=state.subtitleCues.filter(c=>c.from<=t&&c.to>t).slice(0,3).map(c=>c.text).join('\n');});

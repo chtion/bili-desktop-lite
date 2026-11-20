@@ -18,9 +18,11 @@ const {readGitHubCredential}=require('./github-credentials');
 const {version}=require('../package.json');
 const {createSearch}=require('./search');
 const {createEmbeddedWorkspaces}=require('./embedded-workspaces');
+const {createHongguo,officialURL}=require('./hongguo');
+const {createDramaImports,imported}=require('./drama-imports');
 const SHELL_URL = 'bili-app://shell/';
 let mainWindow, biliSession, siteWindow;
-let embeddedWorkspaces;
+let embeddedWorkspaces, hongguo, dramaImports;
 const media = createMediaService(() => biliSession);
 const historySync=createHistorySync(()=>biliSession);
 const personal = createPersonalAPI(apiJSON, accountInfo);
@@ -32,14 +34,22 @@ let accountPromise;
 let overlayOpen = false;
 let preferences, updates, shortcutCapture=false, watching=false, webFullscreen=false, themeMode='system', closeReceiver;
 let bossHidden=false, recoveryTray, siteWasVisible=false, audioWasMuted=false, siteAudioWasMuted=false;
-function windowState() { send('window-state',{pinned:!!mainWindow?.isAlwaysOnTop(),watching}); }
+function windowState() {
+  const state={pinned:!!mainWindow?.isAlwaysOnTop(),watching,fullscreen:!!mainWindow?.isFullScreen()};
+  send('window-state',state);
+  return state;
+}
+function applyPin(enabled) {
+  const level=process.platform==='win32'&&mainWindow.isFullScreen()?'pop-up-menu':'floating';
+  mainWindow.setAlwaysOnTop(enabled,level);
+}
 function togglePin() {
-  if(!mainWindow || mainWindow.isDestroyed() || !watching)return;
+  if(!mainWindow || mainWindow.isDestroyed() || !watching)return null;
   const enabled=!mainWindow.isAlwaysOnTop();
-  mainWindow.setAlwaysOnTop(enabled,'floating');
-  if(enabled&&mainWindow.isVisible()&&!mainWindow.isMinimized())mainWindow.moveTop();
-  windowState();
-  send('pin-feedback',mainWindow.isAlwaysOnTop());
+  applyPin(enabled);
+  const state=windowState();
+  if(state.pinned===enabled)send('pin-feedback',state.pinned);
+  return state;
 }
 function restoreFromBoss() {
   if(!mainWindow || mainWindow.isDestroyed())return;
@@ -135,6 +145,11 @@ function category(value) {
 async function requestData(method, data = {}) {
   const page = Math.min(100, Math.max(1, Number(data.page) | 0));
   switch (method) {
+    case 'pin-window': {
+      const state=togglePin();
+      if(!state)throw new Error('请在播放页使用置顶。');
+      return state;
+    }
     case 'update-info': return updates.info();
     case 'check-update': return updates.check(data.local===true);
     case 'install-update': return updates.install();
@@ -144,7 +159,14 @@ async function requestData(method, data = {}) {
       const result=preferences.save(data);send('settings-changed',result);return result;
     }
     case 'browser-command': return embeddedWorkspaces.browser(data.action,data.id,data.value);
-    case 'hongguo-command': return embeddedWorkspaces.hongguo(data.action,data.value);
+    case 'hongguo': return imported(data.sourceId)?dramaImports.browse(data.method,data):hongguo.request(data.method,data);
+    case 'hongguo-official': return external(officialURL(data.seriesId,data.episodeId));
+    case 'drama-sources': return dramaImports.command(data.action,data.value);
+    case 'drama-import-files': {
+      const selected=await dialog.showOpenDialog(mainWindow,{title:'导入短剧站源',properties:['openFile','multiSelections'],
+        filters:[{name:'短剧列表',extensions:['json','m3u','m3u8']}]});
+      return selected.canceled?{canceled:true}:dramaImports.files(selected.filePaths);
+    }
     case 'feed': {
       const rid = category(data.category);
       if(!rid)return recommendations(page);
@@ -206,7 +228,11 @@ async function requestData(method, data = {}) {
       clipboard.writeText(ep?'https://www.bilibili.com/bangumi/play/ep'+ep:'https://www.bilibili.com/video/'+id+'/');return {};
     }
     case 'progress': return preferences.get().values.historySync?historySync.update(data):{status:'disabled'};
-    case 'release-media': historySync.release(String(data.token)); media.release(String(data.token)); return {};
+    case 'release-media': {
+      const token=String(data.token);
+      historySync.release(token);media.release(token);hongguo.release(token);dramaImports.release(token);
+      return {};
+    }
     case 'danmaku': {
       const cid = Number(data.cid); if (!Number.isSafeInteger(cid) || cid <= 0) throw new Error('无效的分集编号。');
       const response = await biliSession.fetch('https://api.bilibili.com/x/v1/dm/list.so?oid=' + cid, {headers:{Referer:'https://www.bilibili.com/'}, signal:AbortSignal.timeout(15000)});
@@ -299,9 +325,17 @@ async function initialize() {
   files.set('/search-ui.js','search-ui.js');
   files.set('/stream-feed.js','stream-feed.js');
   files.set('/extensions-ui.js','extensions-ui.js');
+  files.set('/hongguo-ui.js','hongguo-ui.js');
+  files.set('/hongguo-collection.js','hongguo-collection.js');
+  hongguo=createHongguo({directory:app.getPath('userData'),network:session.fromPartition('lite-hongguo-media')});
+  dramaImports=createDramaImports(app.getPath('userData'));
   protocol.handle('bili-app', async (request) => {
     const url = new URL(request.url);
     if (url.hostname === 'shell' && url.pathname.startsWith('/media/')) return media.handle(request);
+    if (url.hostname === 'shell' && url.pathname.startsWith('/drama-media/')) return hongguo.handleMedia(request);
+    if (url.hostname === 'shell' && url.pathname.startsWith('/import-media/')) return dramaImports.handleMedia(request);
+    if (url.hostname === 'hongguo-image') return hongguo.handleImage(request);
+    if (url.hostname === 'drama-image') return dramaImports.handleImage(request);
     if (url.hostname === 'shell' && files.has(url.pathname)) return net.fetch(pathToFileURL(path.join(__dirname, files.get(url.pathname))).href);
     if (url.hostname === 'image') {
       const source = imageURL(url.searchParams.get('url'));
@@ -348,7 +382,12 @@ async function initialize() {
   mainWindow.on('blur',()=>captureShortcuts(false));
   mainWindow.on('always-on-top-changed',windowState);
   mainWindow.on('show',()=>{if(bossHidden)restoreFromBoss();});
-  mainWindow.on('leave-full-screen', () => send('resize'));
+  function fullscreenChanged() {
+    if(mainWindow.isAlwaysOnTop())applyPin(true);
+    windowState();send('resize');
+  }
+  mainWindow.on('enter-full-screen',fullscreenChanged);
+  mainWindow.on('leave-full-screen',fullscreenChanged);
   let closeAllowed=false;
   mainWindow.on('close', event => {
     if(!watching||closeAllowed||mainWindow.webContents.isCrashed()){siteWindow?.close();return;}

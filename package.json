@@ -1,7 +1,7 @@
 {
   "name": "bili-desktop-lite",
   "productName": "Bili Desktop Lite",
-  "version": "0.10.1",
+  "version": "0.10.4",
   "description": "An unofficial Bilibili desktop app with a custom interface and day/night themes.",
   "main": "src/main.js",
   "author": "Bili Desktop Lite",
@@ -77,5 +77,9 @@
     "portable": {
       "artifactName": "Bili-Desktop-Lite-${version}-Portable-x64.${ext}"
     }
+  },
+  "dependencies": {
+    "heic-convert": "2.1.0",
+    "openhongguo": "0.4.0"
   }
 }

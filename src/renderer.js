@@ -18,6 +18,8 @@ let activeVideo;
 let generation = 0;
 let currentItems = [];
 let feedSource='guest',feedNote='';
+const homeViews=new Map();
+let lastHomeCategory=0;
 let more = false;
 let loadingMore = false;
 let toastTimer;
@@ -122,6 +124,26 @@ function renderItems() {
   $('feed-area').innerHTML = (homeHero ? hero(currentItems) + `<div class="section-heading"><h2>${icon('video')}${feedSource==='account'?'为你推荐':feedSource==='popular'?'热门视频':'发现好内容'}<small>${esc(feedNote)}</small></h2><span class="live-label" id="feed-source"><i></i>${feedSource==='account'?'账号推荐':feedSource==='popular'?'热门备用':'游客推荐'}</span></div>` : '') + (display.length ? `<div class="video-grid">${display.map(card).join('')}</div>` : empty('还没有找到相关视频', '换个关键词，再发现一点新鲜事。', 'search')) + (more ? '<div class="load-more"><button id="load-more" class="secondary-button">再看一些 ↓</button></div>' : display.length ? '<p class="list-end">已经看到这里了，换个分区再逛逛吧。</p>' : '');
   updateSaved();
 }
+function rememberHome() {
+  if(route.name!=='home'||!currentItems.length)return;
+  lastHomeCategory=route.category;
+  homeViews.set(route.category,{items:currentItems,page:route.page,more,feedSource,feedNote,
+    scroll:$('workspace').scrollTop,collapsed:document.documentElement.classList.contains('sidebar-collapsed')});
+}
+function restoreHome() {
+  const snapshot=homeViews.get(route.category);
+  if(!snapshot)return false;
+  ({items:currentItems,more,feedSource,feedNote}=snapshot);
+  route.page=snapshot.page;
+  lastHomeCategory=route.category;
+  if(!route.category)homeBatch=route.page;
+  setSidebar(snapshot.collapsed);
+  remember(currentItems);
+  renderItems();
+  $('workspace').scrollTop=snapshot.scroll;
+  updateBackTop();
+  return true;
+}
 function empty(title, message, symbol = 'heart') { return `<div class="empty-state"><span>${icon(symbol)}</span><h2>${esc(title)}</h2><p>${esc(message)}</p></div>`; }
 async function fetchList(append = false) {
   const turn = generation;
@@ -168,8 +190,10 @@ function historyCard(v) {
   return `<article class="video-card"><button class="cover-button" ${action} aria-label="继续播放 ${esc(v.title)}">${cover(v)}<span class="history-progress"><i style="width:${progress}%"></i></span></button><button class="video-title" ${action}>${esc(v.title)}</button><div class="video-author">${esc(label)}</div></article>`;
 }
 async function navigate(name, extra = {}, options = {}) {
+  if(name!=='home'||route.category!==(extra.category??0))rememberHome();
   if(route.name==='swipe')StreamFeed.leave();
   Extensions.leave();
+  Hongguo.leave();
   rememberRoute({name,category:0,keyword:'',order:'totalrank',...extra},options.replace);
   setWebFullscreen(false);window.bili.command('play-state',false);$('pin-window').hidden=true;
   if (!options.keepAccount) closeAccount(false);
@@ -191,12 +215,17 @@ async function navigate(name, extra = {}, options = {}) {
   if(name==='search')return loadSearch();
   if(name==='season')return loadSeason();
   if(name==='swipe'){window.bili.command('play-state',true);$('pin-window').hidden=false;return StreamFeed.mount();}
-  if(name==='hongguo'||name==='browser')return Extensions.mount(name);
-  listBase(); return fetchList();
+  if(name==='hongguo')return Hongguo.mount();
+  if(name==='browser')return Extensions.mount();
+  listBase();
+  if(name==='home'&&options.restore&&restoreHome())return true;
+  return fetchList();
 }
 async function watch(bvid, options = {}) {
+  rememberHome();
   if(route.name==='swipe')StreamFeed.leave();
   Extensions.leave();
+  Hongguo.leave();
   if(!options.episodeId&&videos.get(bvid)?.episodeId)options={...options,episodeId:videos.get(bvid).episodeId};
   rememberRoute({name:'watch',bvid,episodeId:options.episodeId},options.replace);
   setWebFullscreen(false);window.bili.command('play-state',true);$('pin-window').hidden=false;
@@ -211,7 +240,7 @@ async function watch(bvid, options = {}) {
   $('workspace').classList.add('playing'); $('workspace').scrollTop = 0;
   $('content').innerHTML = '<div class="watch-heading"><span>正在观看</span><button id="toggle-web-mode" class="subtle-button" aria-pressed="false">'+icon('expand')+'网页全屏</button><button id="retry-stream" class="subtle-button">'+icon('refresh')+'重试播放</button></div><div class="watch-layout"><section class="watch-main"><div class="player-frame"><div id="player-slot" class="player-slot"></div><div id="play-status" class="play-status">正在准备播放器…</div></div><div id="video-detail" class="video-detail"><div class="skeleton"><p></p><small></small></div></div></section><button id="toggle-details" class="details-toggle" aria-controls="watch-side" aria-expanded="true" aria-label="收起右侧详情"></button><aside class="watch-side" id="watch-side"><div class="watch-tabs" role="tablist"><button data-watch-tab="intro" role="tab" aria-selected="false" hidden>简介</button><button data-watch-tab="related" class="active" role="tab" aria-selected="true">推荐</button><button data-watch-tab="comments" role="tab" aria-selected="false">评论</button><button data-watch-tab="parts" role="tab" aria-selected="false">分集</button></div><div class="related"><section id="intro-panel" hidden><div class="intro-recommendations"><h3>接下来看看</h3><div id="intro-related-list"></div></div></section><section id="related-panel"><p class="pane-caption">接下来看看</p><div id="related-list">'+skeleton()+'</div></section><section id="comments-panel" hidden><div class="account-loading"><span class="spinner"></span>正在加载评论…</div></section><section id="parts-panel" hidden></section></div></aside></div>';
   document.querySelector('.watch-heading').insertAdjacentHTML('beforeend','<button id="pin-playback" class="subtle-button" aria-pressed="false">'+icon('pin')+'置顶</button>');
-  $('pin-playback').addEventListener('click',()=>window.bili.command('pin'));
+  $('pin-playback').addEventListener('click',togglePlaybackPin);
   updatePinState({pinned:$('pin-window').getAttribute('aria-pressed')==='true'});
   try {
     await preferencesReady;if(turn!==generation)return;
@@ -231,7 +260,8 @@ let refreshing=false;
 async function refreshRoute() {
   if(refreshing)return;
   if(route.name==='swipe'){StreamFeed.reset();navigate('swipe',{},{replace:true});return;}
-  if(route.name==='hongguo'||route.name==='browser'){Extensions.refresh();return;}
+  if(route.name==='hongguo'){Hongguo.refresh();return;}
+  if(route.name==='browser'){Extensions.refresh();return;}
   if(route.name==='watch'){watch(route.bvid,{episodeId:route.episodeId,part:route.part,fullscreen:webMode,replace:true});return;}
   refreshing=true;
   document.querySelectorAll('[data-refresh]').forEach(b=>{b.disabled=true;b.classList.add('refreshing');});
@@ -261,6 +291,7 @@ async function updateAccount() {
     document.querySelector('#account .avatar').innerHTML = account.avatar ? `<img src="${esc(image(account.avatar))}" alt="">` : icon('user');
     $('account').title = account.loggedIn ? `${account.name} · 账号信息` : '登录 B站';
     if(previousMid!==account.mid){
+      homeViews.clear();
       if(previousMid!==undefined){StreamFeed.reset();if(route.name==='swipe')navigate('swipe',{},{replace:true});}
       if(['following','followers','favorites','dynamics','bangumi'].includes(route.name))navigate(route.name);
       else if(route.name==='home' && !route.category)navigate('home',{page:1},{replace:true,keepAccount:true});
@@ -406,7 +437,10 @@ window.bili.onEvent((type, value) => {
   else if (type === 'settings-changed') updatePreferences(value);
   else if (type === 'settings-error') toast(value);
   else if (type === 'boss-hidden') {bossIsHidden=value;NativePlayer.setSuspended(value && appPreferences.bossPause);}
-  else if (type === 'window-state') updatePinState(value);
+  else if (type === 'window-state') {
+    document.documentElement.dataset.nativeFullscreen=String(value.fullscreen===true);
+    updatePinState(value);
+  }
   else if (type === 'pin-feedback') toast(value?'已置顶 · 切到其他应用仍会保留':'已取消置顶');
   else if (type === 'refresh') refreshRoute();
   else if (type === 'persist-progress') {NativePlayer.flushProgress();window.bili.command('progress-saved');}

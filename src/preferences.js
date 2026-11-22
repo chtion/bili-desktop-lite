@@ -2,17 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const defaults = Object.freeze({ webFullscreen: false, rightPanel: true, feedAutoNext: true, detailAutoNext: true, historySync: true, bossPause: true, bossKey: 'Control+Alt+B', pinKey: 'Control+Alt+P' });
-const isLocalShortcut=key=>/^(?:Shift\+)?[A-Z0-9]$/.test(key);
-function accelerator(value) {
-  if (value === '') return '';
-  if (typeof value !== 'string' || value.length > 60) throw new Error('快捷键格式无效。');
-  const parts=value.split('+').map(p=>p==='Ctrl'?'Control':p);
-  const key=parts.pop()?.toUpperCase(), modifiers=['Control','Alt','Shift'];
-  if (!/^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4]))$/.test(key) || new Set(parts).size!==parts.length || parts.some(p=>!modifiers.includes(p))) throw new Error('请使用 Ctrl、Alt、Shift 配合字母、数字，或 F1–F24。');
-  const result=[...modifiers.filter(m=>parts.includes(m)),key].join('+');
-  if (['F5','F11','Control+K','Control+L','Alt+F4'].includes(result)) throw new Error('这个快捷键已用于刷新、搜索、全屏或关闭窗口，请换一个。');
-  return result;
-}
+const {normalize:accelerator,isLocal:isLocalShortcut}=require('./shortcut-keys');
 function normalize(input, base=defaults) {
   const result={...base};
   for (const key of ['webFullscreen','rightPanel','feedAutoNext','detailAutoNext','bossPause','historySync']) if(Object.hasOwn(input,key)) {

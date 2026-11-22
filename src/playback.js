@@ -53,13 +53,14 @@ const NativePlayer = (() => {
     try {
       const source = options.getSource ? await options.getSource() : await window.bili.api('playback', { bvid, part, episodeId });
       if (turn !== revision) { if(source.token)window.bili.api('release-media', {token:source.token}).catch(()=>{}); return; }
-      if (source.message) {onStatus(source.message);return;}
+      if (source.message) {onStatus(source.message,source);return;}
       state.token = source.token;
       state.source=source;
       state.syncEnabled=source.syncEnabled;
       const startAt=options.resumeAt ?? PlaybackProgress.startTime(source.bvid,source.episodeId,source.cid);
       container.replaceChildren();
       const status = message => { if (!state.disposed) onStatus(message); };
+      if(source.preparing)onStatus('正在准备受保护视频…',source);
       const loadAdaptive = async (video, url, art) => {
         const engine = state.engine = new shaka.Player();
         engine.configure({ abr: {enabled:true}, streaming: {bufferingGoal:30,rebufferingGoal:2}, manifest:{dash:{ignoreMinBufferTime:true}} });
@@ -76,7 +77,7 @@ const NativePlayer = (() => {
           if(!suspended)video.play().catch(() => status('点击播放，开始观看'));
         } catch { if (!state.disposed) status('视频加载失败，请重试或登录后再播放。'); }
       };
-      const speeds=[0.5,0.75,1,1.25,1.5,1.75,2];
+      const speeds=[0.5,0.75,1,1.25,1.5,1.75,2,2.5,3,3.5,4];
       const rate=playerMenu(state,'倍速',speeds.map(speed=>({label:`${speed}×`,speed})),item=>{state.art.playbackRate=item.speed;},2);
       let selectSubtitle=()=>{};
       const subtitles=playerMenu(state,'字幕',[{label:'正在加载字幕…',disabled:true}],item=>selectSubtitle(item));

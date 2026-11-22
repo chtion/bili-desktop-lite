@@ -31,12 +31,28 @@ test('Hongguo retains exact IDs and reports permission limits without retrying o
   assert.deepEqual(detail.items.map(({id,playable})=>[id,playable]),[[first,true],[second,false]]);
   const restricted=await source.request('playback',{seriesId,episodeId:second});
   assert.match(restricted.message,/官方观看/);
+  assert.equal(restricted.retryable,false);
   assert.equal(calls,0);
   const limited=await source.request('playback',{seriesId,episodeId:first});
   assert.match(limited.message,/未向当前客户端开放/);
+  assert.equal(limited.retryable,false);
   assert.equal(calls,1);
   assert.match(officialURL(seriesId,first),new RegExp(first+'$'));
+  assert.equal(officialURL(seriesId,first,1),`https://hongguoduanju.com/player/${seriesId}`);
+  assert.equal(officialURL(seriesId,second,2),`https://hongguoduanju.com/player/${seriesId}/${second}`);
   assert.throws(()=>officialURL('https://example.com'));
+});
+
+test('Hongguo reports protected-only streams before starting the player',async()=>{
+  const source=fixture(async()=>({playback:{protected:true,streams:[
+    {url:'https://v95-aw-reading-video.qznovelvod.com/sample.mp4',codec:'bytevc1',protected:true}
+  ]}}));
+  await source.request('detail',{seriesId});
+  const result=await source.request('playback',{seriesId,episodeId:first});
+  assert.match(result.message,/受保护片源/);
+  assert.equal(result.retryable,false);
+  assert.equal(result.url,undefined);
+  assert.equal(result.token,undefined);
 });
 
 test('Hongguo serves an allowed clear MP4 via a private token and forwards a single range',async()=>{

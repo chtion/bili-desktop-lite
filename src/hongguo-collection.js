@@ -4,9 +4,15 @@ const HongguoCollection=(()=>{
     return [...new Map([...first,...second].map(item=>[item.id,item])).values()];
   }
 
+  async function cursorKey(value) {
+    if(value.length<256)return 'cursor:'+value;
+    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+    return 'sha256:'+Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
+  }
+
   async function collectPages({initial,limit,fetchPage,checkpoint,stopped,wait}) {
     const titles=new Map(initial.items.map(item=>[item.id,item]));
-    const visited=new Set(initial.cursor?[initial.cursor]:[]);
+    const visited=new Set(initial.cursor?[await cursorKey(initial.cursor)]:[]);
     const seenThisRun=new Set();
     let position=initial.cursor||'', stagnant=0;
     let state=initial, pages=0, reason='batch';
@@ -21,11 +27,12 @@ const HongguoCollection=(()=>{
       stagnant=newToRun?0:stagnant+1;
       pages++;
       const next=page.cursor||'';
+      const nextKey=next?await cursorKey(next):'';
       const more=page.more??Boolean(next);
       if(!more)reason='complete';
-      else if(!next||visited.has(next))reason='cursor';
+      else if(!next||visited.has(nextKey))reason='cursor';
       else if(stagnant>=3)reason='stalled';
-      if(next&&!visited.has(next)){position=next;visited.add(next);}
+      if(next&&!visited.has(nextKey)){position=next;visited.add(nextKey);}
       state={items:[...titles.values()],cursor:reason==='complete'?'':position,end:reason==='batch'?'':reason};
       await checkpoint(state,pages);
       if(reason!=='batch')break;

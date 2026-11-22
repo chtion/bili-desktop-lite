@@ -1,7 +1,7 @@
 {
   "name": "bili-desktop-lite",
   "productName": "Bili Desktop Lite",
-  "version": "0.10.5",
+  "version": "0.10.8",
   "description": "An unofficial Bilibili desktop app with a custom interface and day/night themes.",
   "main": "src/main.js",
   "author": "Bili Desktop Lite",
@@ -12,8 +12,10 @@
     "start": "electron .",
     "check": "node scripts/check.cjs",
     "smoke": "electron test/native-player.cjs",
+    "prepack:win": "node scripts/prepare-ffmpeg.cjs",
     "pack:win": "electron-builder --win --x64 --publish never",
     "postpack:win": "node scripts/release-manifest.cjs",
+    "prepack:dir": "node scripts/prepare-ffmpeg.cjs",
     "pack:dir": "electron-builder --win --x64 --dir",
     "test:account": "electron test/sidebar-account.cjs",
     "vendor": "node scripts/vendor.cjs",
@@ -42,6 +44,12 @@
       "package.json"
     ],
     "win": {
+      "extraResources": [
+        {
+          "from": ".cache/ffmpeg/bundle",
+          "to": "ffmpeg"
+        }
+      ],
       "target": [
         {
           "target": "nsis",

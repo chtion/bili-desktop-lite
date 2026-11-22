@@ -7,6 +7,7 @@ const {execFileSync}=require('node:child_process');
 const {assetName,repository,verify}=require('../src/updates');
 const {readGitHubCredential}=require('../src/github-credentials');
 const {version}=require('../package.json');
+const {source}=require('./prepare-ffmpeg.cjs');
 
 const root=path.resolve(__dirname,'..');
 const output=path.join(root,'dist');
@@ -31,6 +32,10 @@ async function publish() {
     await verify(file,asset);
     assets.push({...asset,file});
   }
+  if(manifest.source?.name!==source.name||manifest.source?.sha256!==source.sha256)throw new Error('Missing or invalid FFmpeg source archive.');
+  const sourceFile=path.join(output,source.name);
+  await verify(sourceFile,manifest.source);
+  assets.push({...manifest.source,file:sourceFile});
   const notes=await fs.readFile(path.join(root,'RELEASE_NOTES.md'),'utf8');
   if(!notes.startsWith(`# ${tag}\n`)&&!notes.startsWith(`# ${tag}\r\n`))throw new Error('Update RELEASE_NOTES.md for the release tag.');
 

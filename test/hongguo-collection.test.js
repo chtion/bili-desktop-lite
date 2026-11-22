@@ -45,3 +45,16 @@ test('larger batches retain more than one thousand titles and do not confuse dup
   assert.equal(limited.reason,'cursor');
   assert.equal(limited.state.cursor,first.state.cursor);
 });
+
+test('automatic scans run past the manual batch limit and retain old shows when checking for new ones',async()=>{
+  let index=0;
+  const full=await run(()=>{
+    index++;
+    return {items:[title(index)],cursor:index<56?String(index):'',more:index<56};
+  },{initial:{items:[title(0)],cursor:''},limit:Infinity});
+  assert.equal(full.reason,'complete');
+  assert.equal(full.pages,56);
+  const refreshed=await run(()=>({items:[title(0),title(999)],cursor:'',more:false}),{initial:full.state,limit:Infinity});
+  assert.equal(refreshed.added,1);
+  assert.equal(refreshed.state.items.length,58);
+});

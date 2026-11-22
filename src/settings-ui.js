@@ -77,9 +77,10 @@ function initSettings() {
       event.preventDefault();event.stopPropagation();
       if(event.key==='Escape'){input.blur();return;}
       if(['Control','Alt','Shift','Meta'].includes(event.key))return;
-      const key=event.code.replace(/^Key|^Digit/,'');
-      if(event.metaKey || !/^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4]))$/.test(key)){settingsError('请使用字母、数字或功能键，不使用 Windows 键。');return;}
-      input.dataset.value=[event.ctrlKey?'Control':'',event.altKey?'Alt':'',event.shiftKey?'Shift':'',key].filter(Boolean).join('+');
+      const key=ShortcutKeys.fromEvent(event);
+      if(!key){settingsError('请使用字母、数字、常用符号或功能键。');return;}
+      try{input.dataset.value=ShortcutKeys.normalize(key);}
+      catch(error){settingsError(error.message);return;}
       settingsError('');input.blur();
     });
   }
@@ -88,9 +89,8 @@ function initSettings() {
   document.addEventListener('keydown',event=>{
     if(event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.altKey||event.metaKey||
        document.querySelector('dialog[open]')||event.target.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])'))return;
-    const value=event.code.match(/^(?:Key|Digit)([A-Z0-9])$/)?.[1];
-    if(!value)return;
-    const key=(event.shiftKey?'Shift+':'')+value;
+    const key=ShortcutKeys.fromEvent(event);
+    if(!ShortcutKeys.isLocal(key))return;
     if(key===appPreferences.bossKey){event.preventDefault();event.stopImmediatePropagation();window.bili.command('boss');}
     else if(key===appPreferences.pinKey&&!$('pin-window').hidden){event.preventDefault();event.stopImmediatePropagation();void togglePlaybackPin();}
   },true);

@@ -10,6 +10,8 @@ const Hongguo=(()=>{
   let sourceId='hongguo', sources=[], sourceBusy=false, collecting=false;
   let catalogReady, durableLibrary=false, browseLimit=browseStep;
   let batchSize=24, pauseCollection=false, sourceMessage='';
+  const automaticIntervals=[[0,'关闭'],[30,'每 30 分钟'],[60,'每 1 小时'],[180,'每 3 小时'],[360,'每 6 小时']];
+  let autoMinutes=0,nextAutoAt=0,autoTimer,builtinLoading=false,automaticRun=false;
   const builtinKey=JSON.stringify(['hongguo','home','all','']);
   const id=value=>typeof value==='string'&&/^\d{10,24}$/.test(value);
   const imported=value=>typeof value==='string'&&/^source-[a-f0-9]{32}$/.test(value);
@@ -96,8 +98,10 @@ const Hongguo=(()=>{
 
   async function loadCatalog({append=false,refresh=false,autoplay=false}={}) {
     if(['mine','sources'].includes(section)||!active)return false;
-    if(collecting&&key()===builtinKey)return false;
-    const turn=++listTurn, name=key(), previous=catalogs[name];
+    const name=key(),isBuiltin=name===builtinKey;
+    if(isBuiltin&&(collecting||builtinLoading))return false;
+    if(isBuiltin)builtinLoading=true;
+    const turn=++listTurn, previous=catalogs[name];
     const stillActive=()=>active&&listTurn===turn&&name===key();
     listBusy=true;
     sourceStatus(refresh?'正在刷新剧库…':`正在读取 ${sourceName()}…`);
@@ -132,7 +136,10 @@ const Hongguo=(()=>{
     }catch(error){
       if(stillActive())sourceStatus(previous?.items?.length?`${error.message} 已保留上次的剧库。`:error.message);
       return false;
-    }finally{if(stillActive()){listBusy=false;renderListing();}}
+    }finally{
+      if(isBuiltin)builtinLoading=false;
+      if(stillActive()){listBusy=false;renderListing();}
+    }
   }
 
   function shell() {
@@ -186,6 +193,8 @@ const Hongguo=(()=>{
       <label class="drama-batch-label">每次获取 <select id="drama-batch" aria-label="每次获取的页数" ${collecting?'disabled':''}>${[12,24,48].map(value=>`<option value="${value}" ${value===batchSize?'selected':''}>${value} 页</option>`).join('')}</select></label>
       <button class="secondary-button" data-source-collect ${collecting?'disabled':''}>${collecting?'获取中…':builtin?.end==='complete'?'检查新剧':'获取更多剧目'}</button>
       ${collecting?`<button class="subtle-button" data-source-pause ${pauseCollection?'disabled':''}>${pauseCollection?'正在暂停…':'暂停'}</button>`:''}</div></article>
+      <div class="drama-auto-source"><label class="drama-batch-label">自动获取 <select id="drama-auto-interval" aria-label="自动获取间隔">${automaticIntervals.map(([value,label])=>`<option value="${value}" ${value===autoMinutes?'selected':''}>${label}</option>`).join('')}</select></label>
+      <small>${autoMinutes?(collecting?'正在保存分页进度':nextAutoAt>Date.now()?`下次获取 ${esc(new Date(nextAutoAt).toLocaleString('zh-CN'))}`:'即将开始获取'):'开启后持续获取到站源末尾，应用运行期间定时补新。'}</small></div>
       ${sources.map(source=>`<article class="drama-source-row"><div><strong>${esc(source.name)}</strong><small>${source.count} 部短剧 · ${esc(new Date(source.updated).toLocaleString('zh-CN'))}</small></div>
       <div><button class="subtle-button" data-source-view="${source.id}">浏览</button><button class="subtle-button" data-source-update="${source.id}" ${sourceBusy?'disabled':''}>更新</button><button class="subtle-button" data-source-remove="${source.id}" ${sourceBusy?'disabled':''}>移除</button></div></article>`).join('')}
       <details class="drama-import-help"><summary>查看支持的导入格式</summary><p>JSON 可按剧目组织分集，M3U 可批量导入视频链接。媒体支持公网 HTTPS 的 MP4 和 HLS。</p>
@@ -234,19 +243,50 @@ const Hongguo=(()=>{
     finally{sourceBusy=false;if(active&&section==='sources')renderSources(message);}
   }
 
-  async function collect() {
-    if(collecting)return;
-    collecting=true;pauseCollection=false;
-    const initial=catalogs[builtinKey]||{items:[],cursor:''};
-    const limit=batchSize;
-    sourceMessage='正在从红果获取更多剧目…';renderSources();
+  function scheduleAutomatic(minimumDelay=0) {
+    clearTimeout(autoTimer);
+    if(!autoMinutes||collecting)return;
+    autoTimer=setTimeout(()=>void collect(true),Math.max(minimumDelay,nextAutoAt-Date.now()));
+  }
+  function setAutomatic(value) {
+    if(!automaticIntervals.some(([minutes])=>minutes===value))return;
+    autoMinutes=value;nextAutoAt=0;
+    storage.write('hongguo-auto-minutes',value);storage.write('hongguo-auto-next',0);
+    if(!value&&automaticRun)pauseCollection=true;
+    scheduleAutomatic();renderSources();
+  }
+
+  async function collect(automatic=false) {
+    if(collecting||automatic&&!autoMinutes)return;
+    if(builtinLoading){
+      if(automatic)scheduleAutomatic(1500);
+      else renderSources('正在读取红果目录，请稍候。');
+      return;
+    }
+    collecting=true;automaticRun=automatic;pauseCollection=false;
+    clearTimeout(autoTimer);
+    if(automatic){nextAutoAt=0;storage.write('hongguo-auto-next',0);}
+    let startCount=0;
+    const limit=automatic?Infinity:batchSize;
+    sourceMessage=automatic?'正在自动获取红果剧目…':'正在从红果获取更多剧目…';
+    if(active&&section==='sources')renderSources();
     try{
+      await initializeCatalogs();
+      let initial=catalogs[builtinKey]||{items:[],cursor:''};
+      startCount=initial.items.length;
+      const fetchPage=cursor=>request('catalog',{sourceId:'hongguo',section:'home',category:'all',cursor});
+      if(automatic&&initial.cursor&&!pauseCollection){
+        const latest=await fetchPage();
+        initial={...initial,items:merge(latest.items,initial.items),updated:Date.now()};
+        await saveBuiltin(initial);
+        await new Promise(resolve=>setTimeout(resolve,800));
+      }
       const result=await collectPages({
         initial,limit,
-        fetchPage:cursor=>request('catalog',{sourceId:'hongguo',section:'home',category:'all',cursor}),
+        fetchPage,
         checkpoint:async (entry,pages)=>{
           await saveBuiltin({...entry,updated:Date.now()});
-          sourceMessage=`已获取 ${pages} / ${limit} 页，新增 ${entry.items.length-initial.items.length} 部。`;
+          sourceMessage=`已获取 ${pages}${automatic?'':` / ${limit}`} 页，新增 ${entry.items.length-startCount} 部。`;
           if(active&&section==='sources'){
             const notice=document.querySelector('.drama-import-status');
             if(notice)notice.textContent=sourceMessage;
@@ -263,12 +303,13 @@ const Hongguo=(()=>{
         stalled:'连续三页内容重复，已保存已获取的剧目。',
         paused:'已暂停，可从保存的位置继续获取。'
       }[result.reason]||'';
-      sourceMessage=`本次新增 ${result.added} 部，剧库共 ${result.state.items.length} 部。${end}`;
+      sourceMessage=`本次新增 ${result.state.items.length-startCount} 部，剧库共 ${result.state.items.length} 部。${end}`;
     }catch(error){
-      sourceMessage=`${error.message} 本次已保存 ${(catalogs[builtinKey]?.items.length||0)-initial.items.length} 部新剧。`;
+      sourceMessage=`${error.message} 本次已保存 ${Math.max(0,(catalogs?.[builtinKey]?.items.length||0)-startCount)} 部新剧。`;
     }
     finally{
-      collecting=false;pauseCollection=false;
+      collecting=false;automaticRun=false;pauseCollection=false;
+      if(autoMinutes){nextAutoAt=Date.now()+autoMinutes*60000;storage.write('hongguo-auto-next',nextAutoAt);scheduleAutomatic();}
       if(active&&section==='sources')renderSources();
       else if(active&&!detail&&key()===builtinKey){sourceStatus();renderListing();}
     }
@@ -315,7 +356,7 @@ const Hongguo=(()=>{
     <div class="drama-detail">
       <div class="drama-player-column"><div class="drama-stage"><div id="drama-player"></div>
         <div id="drama-player-status" class="drama-player-status"><p id="drama-play-message" role="status">正在获取播放地址…</p>
-          <button class="primary-button" data-drama-official hidden>${icon('link')} 官方观看</button>
+          <button class="primary-button" data-drama-official hidden>${icon('link')} 在浏览器打开红果</button>
           <button class="subtle-button" data-drama-retry hidden>重试</button></div></div>
       <div class="drama-play-actions"><span id="drama-current"></span><button class="subtle-button" data-drama-next>下一集 ${icon('arrow')}</button></div></div>
       <aside class="drama-info"><div class="drama-title"><span class="drama-cover">${cover(series)}</span>
@@ -379,13 +420,14 @@ const Hongguo=(()=>{
     detail.selected=selected;
     const record=recent.find(item=>item.id===current.id&&item.episodeId===selected.id&&(item.sourceId||'hongguo')===current.sourceId);
     const overlay=$('drama-player-status');
-    function status(message) {
+    function status(message,source) {
       if(!active||detail!==current||turn!==playing)return;
       $('drama-play-message').textContent=message;
       overlay.hidden=!message;
-      const waiting=message==='正在获取播放地址…';
-      overlay.querySelector('[data-drama-retry]').hidden=waiting||!selected.playable;
+      const waiting=message==='正在获取播放地址…'||source?.preparing===true;
+      overlay.querySelector('[data-drama-retry]').hidden=waiting||!selected.playable||source?.retryable===false;
       overlay.querySelector('[data-drama-official]').hidden=waiting||current.sourceId!=='hongguo';
+      if(source?.retryable===false)setPlaying(false);
     }
     $('drama-current').textContent=`第 ${selected.number} 集${selected.title&&selected.title.replace(/\s/g,'')!==`第${selected.number}集`&&selected.title!==String(selected.number)?' · '+selected.title:''}`;
     document.querySelector('[data-drama-next]').disabled=selected.id===detail.episodes.at(-1)?.id&&!detail.cursor;
@@ -478,6 +520,7 @@ const Hongguo=(()=>{
     shell();renderBrowse();void loadCatalog();
   });
   document.addEventListener('change',event=>{
+    if(active&&event.target.id==='drama-auto-interval')setAutomatic(Number(event.target.value));
     if(active&&event.target.id==='drama-batch'){
       const selected=Number(event.target.value);
       if([12,24,48].includes(selected)){batchSize=selected;storage.write('hongguo-fetch-pages',batchSize);}
@@ -486,6 +529,14 @@ const Hongguo=(()=>{
       sourceId=event.target.value;recommendationIndex=0;selectSection(section);
     }
   });
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    const interval=Number(storage.read('hongguo-auto-minutes',0));
+    if(!automaticIntervals.some(([value])=>value===interval)||!interval)return;
+    autoMinutes=interval;
+    nextAutoAt=Math.min(Date.now()+interval*60000,Number(storage.read('hongguo-auto-next',0))||0);
+    scheduleAutomatic();
+  },{once:true});
 
   document.addEventListener('click',event=>{
     const button=event.target.closest('.drama-workspace button');
@@ -503,7 +554,7 @@ const Hongguo=(()=>{
     else if('dramaStep'in data)void step(Number(data.dramaStep));
     else if('dramaRetry'in data&&detail?.selected)void play(detail.selected);
     else if('dramaOfficial'in data&&detail?.id){
-      window.bili.api('hongguo-official',{seriesId:detail.id,episodeId:detail.selected?.id}).catch(error=>toast(error.message));
+      window.bili.api('hongguo-official',{seriesId:detail.id,episodeId:detail.selected?.id,episodeNumber:detail.selected?.number}).catch(error=>toast(error.message));
     }else if('dramaSave'in data&&detail?.series){
       const item=detail.series, found=favorites.some(saved=>sameShow(saved,item));
       favorites=found?favorites.filter(saved=>!sameShow(saved,item)):[item,...favorites].slice(0,200);

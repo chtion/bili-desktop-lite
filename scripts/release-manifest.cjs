@@ -1,20 +1,22 @@
 'use strict';
 const fs=require('node:fs');
-const {createHash}=require('node:crypto');
 const path=require('node:path');
 const {assetName}=require('../src/updates');
 const {version}=require('../package.json');
+const {source,cache,hash}=require('./prepare-ffmpeg.cjs');
 
 async function main() {
   const assets={};
   for(const mode of ['portable','installer']) {
     const name=assetName(version,mode),file=path.join('dist',name);
-    const size=fs.statSync(file).size,hash=createHash('sha256');
-    for await(const bytes of fs.createReadStream(file))hash.update(bytes);
-    assets[mode]={name,size,sha256:hash.digest('hex')};
+    assets[mode]={name,size:fs.statSync(file).size,sha256:await hash(file)};
   }
-  fs.writeFileSync('dist/bili-release.json',JSON.stringify({version,assets},null,2)+'\n');
-  const checksums=Object.values(assets).map(asset=>`${asset.sha256}  ${asset.name}`).join('\n');
+  const sourceFile=path.join('dist',source.name);
+  fs.copyFileSync(path.join(cache,source.name),sourceFile);
+  if(await hash(sourceFile)!==source.sha256)throw new Error('FFmpeg source archive SHA-256 mismatch.');
+  const sourceAsset={name:source.name,size:fs.statSync(sourceFile).size,sha256:source.sha256};
+  fs.writeFileSync('dist/bili-release.json',JSON.stringify({version,assets,source:sourceAsset},null,2)+'\n');
+  const checksums=[...Object.values(assets),sourceAsset].map(asset=>`${asset.sha256}  ${asset.name}`).join('\n');
   fs.writeFileSync(`dist/SHA256SUMS-${version}.txt`,checksums+'\n');
   console.log(`Verified release manifest for ${version}`);
 }

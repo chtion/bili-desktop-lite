@@ -162,7 +162,7 @@ async function requestData(method, data = {}) {
     case 'browser-command': return embeddedWorkspaces.browser(data.action,data.id,data.value);
     case 'browser-download': return embeddedWorkspaces.download(data.action,data.id);
     case 'hongguo': return imported(data.sourceId)?dramaImports.browse(data.method,data):hongguo.request(data.method,data);
-    case 'hongguo-official': return external(officialURL(data.seriesId,data.episodeId));
+    case 'hongguo-official': return shell.openExternal(officialURL(data.seriesId,data.episodeId,data.episodeNumber));
     case 'drama-sources': return dramaImports.command(data.action,data.value);
     case 'drama-import-files': {
       const selected=await dialog.showOpenDialog(mainWindow,{title:'导入短剧站源',properties:['openFile','multiSelections'],
@@ -232,7 +232,8 @@ async function requestData(method, data = {}) {
     case 'progress': return preferences.get().values.historySync?historySync.update(data):{status:'disabled'};
     case 'release-media': {
       const token=String(data.token);
-      historySync.release(token);media.release(token);hongguo.release(token);dramaImports.release(token);
+      historySync.release(token);media.release(token);dramaImports.release(token);
+      await hongguo.release(token);
       return {};
     }
     case 'danmaku': {
@@ -329,6 +330,7 @@ async function initialize() {
   files.set('/extensions-ui.js','extensions-ui.js');
   files.set('/hongguo-ui.js','hongguo-ui.js');
   files.set('/hongguo-collection.js','hongguo-collection.js');
+  files.set('/shortcut-keys.js','shortcut-keys.js');
   hongguo=createHongguo({directory:app.getPath('userData'),network:session.fromPartition('lite-hongguo-media')});
   dramaImports=createDramaImports(app.getPath('userData'));
   protocol.handle('bili-app', async (request) => {
@@ -408,4 +410,8 @@ async function initialize() {
   mainWindow.show();
 }
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit',()=>{preferences?.dispose();recoveryTray?.destroy();});
+app.on('will-quit',event=>{
+  const cleanup=hongguo?.dispose();
+  if(cleanup){event.preventDefault();void cleanup.then(()=>app.quit());return;}
+  preferences?.dispose();recoveryTray?.destroy();
+});

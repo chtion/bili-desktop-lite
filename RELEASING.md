@@ -11,7 +11,7 @@
 ## 发布步骤
 
 1. 更新 `package.json` 和 `package-lock.json` 的版本号，并更新 [CHANGELOG.md](CHANGELOG.md) 与 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
-2. 运行 `npm run check` 和相关 Electron 回归测试，再运行 `npm run pack:win`。构建会在 `dist` 中生成安装版、免安装版、SHA-256 和发布清单。
+2. 运行 `npm run check` 和相关 Electron 回归测试，再运行 `npm run pack:win`。打包会校验并附带 FFmpeg，在 `dist` 中生成安装版、免安装版、FFmpeg 源码归档、SHA-256 和发布清单。
 3. 提交源码并创建同版本的 Git 标签。将分支和标签推送到 GitHub。
-4. 登录有发布权限的 GitHub 账号后，运行 `node scripts/publish-release.cjs --publish`。脚本先核对远程标签和本地校验值，再创建草稿并上传两个 EXE。附件大小与 GitHub 的 SHA-256 匹配后才正式发布。
+4. 登录有发布权限的 GitHub 账号后，运行 `node scripts/publish-release.cjs --publish`。脚本先核对远程标签和本地校验值，再创建草稿并上传两个 EXE 和 FFmpeg 源码归档。附件大小与 GitHub 的 SHA-256 匹配后才正式发布。
 5. 使用有仓库读取权限的 GitHub 登录，在应用中检查更新。私有仓库需要 Git Credential Manager 已保存的登录。`dist` 和旧安装包保持在本机，Git 只跟踪源码，EXE 由 Releases 分发。

@@ -8,11 +8,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="window-tools"><span id="window-video-title"></span><button id="pin-window" class="caption-button" aria-label="置顶播放窗口" title="置顶播放窗口" aria-pressed="false" data-icon="pin" hidden></button></div>
   <header class="topbar">
+    <div class="topbar-drag" aria-hidden="true"></div>
     <form id="search-form" role="search"><button id="search-toggle" type="button" data-icon="search" aria-label="展开搜索" aria-expanded="true" aria-controls="search-fields" title="搜索（Ctrl+K）"></button><div id="search-fields"><input id="search" aria-label="搜索视频、用户或番剧" placeholder="搜索视频、用户、番剧，或粘贴 BV 链接" autocomplete="off" maxlength="160"><kbd>Ctrl K</kbd><button type="submit" aria-label="搜索">搜索</button></div></form>
     <div class="top-actions"><button id="theme-toggle" class="icon-button" title="切换昼夜主题" aria-label="切换昼夜主题" data-icon="moon"></button></div>
   </header>
+  <div class="window-tools"><span id="window-video-title"></span><button type="button" id="pin-window" class="caption-button" aria-label="置顶播放窗口" title="置顶播放窗口" aria-pressed="false" data-icon="pin" hidden></button></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo-row"><button class="brand" data-route="home" aria-label="Bili Lite 首页"><span class="brand-symbol" data-icon="video"></span><span class="brand-name">Bili <strong>Lite</strong></span></button></div>
     <div class="sidebar-controls"><button id="app-back" class="icon-button" data-back title="返回" aria-label="返回上一页" data-icon="back" disabled></button><button id="sidebar-toggle" class="icon-button" aria-label="收起侧栏" title="收起侧栏" aria-expanded="true" aria-controls="sidebar" data-icon="panel"></button></div>
@@ -60,7 +61,7 @@
       <section class="settings-section"><h3>快捷键</h3><p class="settings-hint">点击输入框后按下组合键。快捷键在应用未聚焦时也能使用。</p>
         <div class="shortcut-row"><label for="pref-boss-key"><strong>老板键</strong><small>隐藏 / 恢复窗口</small></label><input id="pref-boss-key" data-shortcut="bossKey" aria-label="录制老板键" readonly placeholder="未设置"><button type="button" data-clear-shortcut="pref-boss-key" class="subtle-button">清除</button></div>
         <div class="shortcut-row"><label for="pref-pin-key"><strong>置顶播放</strong><small>视频页中切换窗口置顶</small></label><input id="pref-pin-key" data-shortcut="pinKey" aria-label="录制置顶快捷键" readonly placeholder="未设置"><button type="button" data-clear-shortcut="pref-pin-key" class="subtle-button">清除</button></div>
-        <p id="shortcut-hint" class="settings-hint">支持单键和组合键。单个字母或数字只在本窗口生效，隐藏后可从托盘恢复。功能键及 Ctrl / Alt 组合可在后台使用。Esc 取消录制。</p>
+        <p id="shortcut-hint" class="settings-hint">可录制字母、数字、符号和功能键。普通单键只在本窗口生效，功能键及 Ctrl / Alt 组合可在后台使用。Esc 取消录制。</p>
       </section>
       <section class="settings-section appearance-section"><h3>外观</h3><div class="settings-themes"><button type="button" data-theme-mode="light">白天</button><button type="button" data-theme-mode="dark">夜晚</button><button type="button" data-theme-mode="system">跟随系统</button></div></section>
       <section class="settings-section"><h3>播放记录</h3><label class="setting-row"><span><strong>同步到 B站播放历史</strong><small>登录后同步实际观看进度。本机续播始终可用。</small></span><input type="checkbox" id="pref-history-sync" role="switch"></label></section>
@@ -92,6 +93,7 @@
   <script src="progress-ui.js"></script>
   <script src="playback.js"></script>
   <script src="panels.js"></script>
+  <script src="shortcut-keys.js"></script>
   <script src="settings-ui.js"></script>
   <script src="watch-layout.js"></script>
   <script src="video-ui.js"></script>

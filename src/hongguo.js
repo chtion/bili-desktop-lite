@@ -2,15 +2,16 @@
 const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {plainText} = require('./navigation');
+const {createProtectedMedia,findFfmpeg} = require('./hongguo-cenc');
 
 const origin = 'https://hongguoduanju.com';
 const categories = new Set(['all','human','comic_series_rank','ai_playlet']);
 const searchFilters = {human:'content_type_short_play',comic_series_rank:'content_type_dynamic_comic',ai_playlet:'content_type_ai_dynamic_comic'};
 const catalogGenres = {human:'short_play',comic_series_rank:'comic_series',ai_playlet:'ai_series'};
 const imageHosts = ['fqnovelpic.com','byteimg.com','bytegecko.com','snssdk.com','ibytedtos.com'];
-const videoHosts = ['byte-vod.com','bytefcdn.com','volcvod.com','zjcdn.com','fqnovelvod.com'];
+const videoHosts = ['byte-vod.com','bytefcdn.com','volcvod.com','zjcdn.com','fqnovelvod.com','qznovelvod.com'];
 const id = value => typeof value==='string' && /^\d{10,24}$/.test(value) ? value : '';
-const cursor = value => typeof value==='string' && value.length<=512*1024 ? value : undefined;
+const cursor = value => typeof value==='string' && value.length<=4*1024*1024 ? value : undefined;
 
 function cdnURL(value, hosts) {
   try {
@@ -39,9 +40,10 @@ function page(result, map) {
   return {items:[...entries.values()],cursor:result?.has_more?cursor(result.cursor)||'':'',more:result?.has_more===true};
 }
 
-function officialURL(seriesId,episodeId) {
+function officialURL(seriesId,episodeId,episodeNumber) {
   if(!id(seriesId))throw new Error('无法识别这部短剧。');
-  return episodeId&&id(episodeId)?`${origin}/player/${seriesId}/${episodeId}`:`${origin}/detail?series_id=${seriesId}`;
+  if(!id(episodeId))return `${origin}/detail?series_id=${seriesId}`;
+  return Number(episodeNumber)===1?`${origin}/player/${seriesId}`:`${origin}/player/${seriesId}/${episodeId}`;
 }
 
 function sourceError(error) {
@@ -52,7 +54,7 @@ function sourceError(error) {
 }
 
 function createHongguo({directory,network,loadSDK=()=>import('openhongguo')}) {
-  let clientTask;
+  let clientTask,ffmpeg;
   const media = new Map(), knownEpisodes = new Map(), requests = new Map();
   function client() {
     clientTask??=loadSDK().then(module=>module.createClient({
@@ -79,27 +81,44 @@ function createHongguo({directory,network,loadSDK=()=>import('openhongguo')}) {
 
   async function playback(api,seriesId,episodeId) {
     const entry=knownEpisodes.get(episodeId);
-    if(entry?.seriesId!==seriesId||!entry.playable)return {message:'该集需在红果官方观看。'};
-    let model;
+    if(entry?.seriesId!==seriesId||!entry.playable)return {message:'该集需在红果官方观看。',retryable:false};
+    let model,contentKey;
     try {
-      ({playback:model}=await api.resolvePlayback(episodeId));
+      ({playback:model,contentKey}=await api.resolvePlayback(episodeId));
     } catch(error) {
       if(['ANONYMOUS_LIMITED','AUTHENTICATION_REQUIRED','CONTENT_UNAVAILABLE'].includes(error.code)){
-        return {message:'红果暂未向当前客户端开放这集的内播，请前往官方观看。'};
+        return {message:'红果暂未向当前客户端开放这集的内播，请前往官方观看。',retryable:false};
       }
       throw error;
     }
-    const streams=(model?.streams||[]).filter(stream=>!stream.hls&&!stream.dash&&
-      stream.protected!==true&&(!model.protected||stream.protected===false)&&
+    const streams=model?.streams||[];
+    const clear=streams.filter(stream=>stream.protected!==true&&(!model.protected||stream.protected===false));
+    const compatible=clear.filter(stream=>!stream.hls&&!stream.dash&&
       (!stream.codec||/^(?:h[.]?264|avc)/i.test(stream.codec))).sort((a,b)=>(Number(b.height)||0)-(Number(a.height)||0));
-    const urls=streams.flatMap(stream=>[stream.url,stream.backup_url]).map(value=>cdnURL(value,videoHosts)).filter(Boolean);
-    if(!urls.length)return {message:'这集没有适用于当前播放器的视频流，请前往官方观看。'};
-    const now=Date.now(), expires=Number(model.expires_at)*1000;
-    for(const [key,entry] of media)if(entry.expires<=now)media.delete(key);
+    const addresses=variants=>[...new Set(variants.flatMap(stream=>[stream.url,stream.backup_url]).map(value=>cdnURL(value,videoHosts)).filter(Boolean))];
+    const urls=addresses(compatible);
+    const now=Date.now(), expires=Number(model?.expires_at)*1000;
+    for(const [key,entry] of media)if(entry.expires<=now)void release(key);
     if(expires>0&&expires<=now)return {message:'播放地址已过期，请重试。'};
+    let protectedMedia;
+    if(!urls.length){
+      const resolution=stream=>Math.min(Number(stream.width)||Infinity,Number(stream.height)||Infinity);
+      const score=stream=>Math.abs(540-resolution(stream));
+      const encrypted=streams.filter(stream=>!stream.hls&&!stream.dash&&stream.encryption==='cenc-aes-ctr'&&
+        /^(?:bytevc1|hevc|h[.]?26[45]|avc1|hvc1|hev1)$/i.test(stream.codec||'')).sort((a,b)=>score(a)-score(b));
+      const candidates=addresses(encrypted);
+      if(!candidates.length||!/^[0-9a-f]{32}$/i.test(contentKey?.key||'')){
+        const message=streams.length&&!clear.length?'红果返回的是受保护片源，本次未提供可用的播放许可。':'红果暂无可在应用内播放的片源。';
+        return {message,retryable:false};
+      }
+      const executable=ffmpeg||await findFfmpeg();
+      if(!executable)return {message:'受保护短剧需要 FFmpeg。请重新安装 Windows 发布包，或将带 H.264 编码的 FFmpeg 加入系统 PATH。',retryable:false};
+      ffmpeg=executable;
+      protectedMedia=createProtectedMedia({directory:path.join(directory,'hongguo-media-temp'),executable,key:contentKey.key,urls:candidates,network});
+    }
     const token=randomUUID();
-    media.set(token,{urls:[...new Set(urls)],expires:Math.min(expires||Infinity,now+60*60*1000)});
-    return {url:`bili-app://shell/drama-media/${token}.mp4`,type:'mp4',token};
+    media.set(token,{urls,protectedMedia,expires:Math.min(expires||Infinity,now+60*60*1000)});
+    return {url:`bili-app://shell/drama-media/${token}.mp4`,type:'mp4',token,...(protectedMedia?{preparing:true}:{})};
   }
 
   async function request(method,data={}) {
@@ -128,6 +147,7 @@ function createHongguo({directory,network,loadSDK=()=>import('openhongguo')}) {
     if(!entry||entry.expires<=Date.now())return new Response('',{status:404});
     const range=request.headers.get('range');
     if(range&&!/^bytes=\d+-\d*$/.test(range))return new Response('',{status:416});
+    if(entry.protectedMedia)return entry.protectedMedia.handle(request,range);
     for(const url of entry.urls){
       try {
         const response=await network.fetch(url,{headers:range?{Range:range}:{},credentials:'omit',redirect:'error',
@@ -167,7 +187,16 @@ function createHongguo({directory,network,loadSDK=()=>import('openhongguo')}) {
     }catch{return new Response('',{status:502});}
   }
 
-  return {request,handleMedia,handleImage,release:token=>media.delete(token)};
+  function release(token) {
+    const entry=media.get(token);
+    media.delete(token);
+    return entry?.protectedMedia?.dispose();
+  }
+  function dispose() {
+    const cleanup=[...media.keys()].map(release).filter(Boolean);
+    return cleanup.length?Promise.allSettled(cleanup):null;
+  }
+  return {request,handleMedia,handleImage,release,dispose};
 }
 
 module.exports={createHongguo,officialURL};

@@ -56,7 +56,8 @@ async function verify(file,asset) {
 function createUpdates({app,fetch,chooseFolder,portableFile,version=app.getVersion(),onProgress=()=>{},getCredential=async()=>null}) {
   const current=version,mode=portableFile?'portable':'installer';
   let candidate=null,operation=null,checkGeneration=0;
-  let pendingCheck=null,checked=null,checkBlockedUntil=0,downloadBlockedUntil=0;
+  const pendingChecks=new Map();
+  let checked=null,checkBlockedUntil=0,downloadBlockedUntil=0;
   const summary=(message,offer=null)=>({current,message,offer});
   const apiHeaders=accept=>({'User-Agent':`BiliDesktopLite/${current}`,Accept:accept,'X-GitHub-Api-Version':'2022-11-28'});
   function offerFor(update){return summary(`发现 v${update.version}，更新后会重启。`,{version:update.version,source:update.file?'本地发布文件夹':'GitHub Releases',size:update.size,notes:update.notes||''});}
@@ -78,11 +79,12 @@ function createUpdates({app,fetch,chooseFolder,portableFile,version=app.getVersi
     return offerFor(candidate);
   }
 
-  async function fromGitHub() {
+  async function fromGitHub(automatic) {
     const headers=apiHeaders('application/vnd.github+json');
     const latest=extra=>fetch(`${apiBase}/releases/latest`,{credentials:'omit',headers:{...headers,...extra},redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)});
     let result=await latest(),privateRelease=false;
     if(result.status===404){
+      if(automatic)return {message:'暂未找到公开发布，可以手动检查更新。'};
       const token=await getCredential();
       if(!token)return {message:'无法读取 GitHub Releases。私有仓库需要本机 Git 登录，也可以从发布文件夹检查。'};
       privateRelease=true;
@@ -97,27 +99,32 @@ function createUpdates({app,fetch,chooseFolder,portableFile,version=app.getVersi
     }
     const release=await result.json(),tag=String(release.tag_name||''),version=tag.replace(/^v/,'');
     if(!validVersion(version)||release.draft||release.prerelease)throw new Error('未找到有效的公开发布。');
-    if(outsideDevelopmentLine(version,current))return {message:'公开发布仍使用旧编号。可以从 0.x 发布文件夹检查。',cache:true};
-    if(!newer(version,current))return {message:'当前已经是最新公开版本。',cache:true};
+    if(outsideDevelopmentLine(version,current))return {message:'公开发布仍使用旧编号。可以从 0.x 发布文件夹检查。',cache:true,privateRelease};
+    if(!newer(version,current))return {message:'当前已经是最新公开版本。',cache:true,privateRelease};
     const found=(release.assets||[]).find(a=>a.name===assetName(version,mode)&&a.state==='uploaded');
     if(!found)throw new Error('这个版本未发布适用于当前安装方式的 EXE。');
     const asset=validateAsset(version,mode,{name:found.name,size:found.size,sha256:String(found.digest||'').replace(/^sha256:/,'')});
     const url=`https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${asset.name}`;
     if(found.browser_download_url!==url)throw new Error('发布包下载地址不匹配。');
     if(privateRelease&&(!Number.isSafeInteger(found.id)||found.id<=0))throw new Error('私有发布缺少有效的下载编号。');
-    return {cache:true,update:{...asset,version,url,privateAssetId:privateRelease?found.id:null,notes:typeof release.body==='string'?release.body.trim().slice(0,1600):''}};
+    return {cache:true,privateRelease,update:{...asset,version,url,privateAssetId:privateRelease?found.id:null,notes:typeof release.body==='string'?release.body.trim().slice(0,1600):''}};
   }
 
-  async function check(local=false) {
+  function onlineCheck(automatic) {
+    if(checked?.until>Date.now()&&(!automatic||!checked.data.privateRelease))return checked.data;
+    if(!pendingChecks.has(automatic))pendingChecks.set(automatic,fromGitHub(automatic).then(result=>{
+      if(result.cache)checked={until:Date.now()+checkCacheMs,data:result};
+      return result;
+    }).finally(()=>pendingChecks.delete(automatic)));
+    return pendingChecks.get(automatic);
+  }
+  async function check(local=false,automatic=false) {
     if(operation)throw new Error('更新正在进行。');
     const turn=++checkGeneration;
     candidate=null;
     if(local){const folder=await chooseFolder();return folder?fromFolder(folder,turn):summary('已取消选择。');}
     if(Date.now()<checkBlockedUntil)throw new Error(limitMessage(checkBlockedUntil));
-    const data=checked?.until>Date.now()?checked.data:await (pendingCheck??=fromGitHub().then(result=>{
-      if(result.cache)checked={until:Date.now()+checkCacheMs,data:result};
-      return result;
-    }).finally(()=>{pendingCheck=null;}));
+    const data=await onlineCheck(automatic);
     if(turn!==checkGeneration)return summary('已发起另一次更新检查。');
     candidate=data.update||null;
     return candidate?offerFor(candidate):summary(data.message);

@@ -7,6 +7,7 @@ window.icon = (name, cls = '') => {
     star: '<path d="m12 2 3 6 7 1-5 5 1 8-6-4-6 4 1-8-5-5 7-1Z"/>',
     bookmarks: '<path d="M6 4h12v17l-6-4-6 4Z"/>',
     download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/>',
+    live: '<circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M8.5 8.5a5 5 0 0 0 0 7m7-7a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13m13-13a9 9 0 0 1 0 13"/>',
     pin: '<path d="m8 3 8 0-1 6 4 4v2H5v-2l4-4-1-6ZM12 15v7"/>',
     expand: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
     swipe: '<rect x="5" y="3" width="14" height="18" rx="3"/><path d="m9 9 3-3 3 3m-6 6 3 3 3-3"/>',

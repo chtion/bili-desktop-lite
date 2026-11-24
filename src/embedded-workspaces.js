@@ -1,6 +1,7 @@
 'use strict';
 const {app,Menu,WebContentsView,session,shell}=require('electron');
 const {createBrowserLibrary}=require('./browser-library');
+const {liveURL}=require('./live');
 
 function webURL(value) {
   try {
@@ -21,7 +22,7 @@ function addressURL(value) {
   return 'https://www.bing.com/search?q='+encodeURIComponent(address);
 }
 
-function createEmbeddedWorkspaces(window,send) {
+function createEmbeddedWorkspaces(window,send,biliSession,bindKeys) {
   const browserSession=session.fromPartition('persist:lite-browser');
   browserSession.setPermissionRequestHandler((_contents,_name,respond)=>respond(false));
   browserSession.setPermissionCheckHandler(()=>false);
@@ -29,7 +30,7 @@ function createEmbeddedWorkspaces(window,send) {
   const library=createBrowserLibrary({directory:app.getPath('userData'),downloadsDirectory:app.getPath('downloads'),
     session:browserSession,ownsContents:contents=>[...tabs.values()].some(tab=>tab.view.webContents===contents),
     send,reveal:file=>shell.showItemInFolder(file),webURL});
-  let lastId=0, activeId=null, activeView=null, layout=null;
+  let lastId=0, activeId=null, activeView=null, layout=null, live=null;
 
   const browserCurrent=()=>tabs.get(activeId);
   function browserState() {
@@ -42,7 +43,7 @@ function createEmbeddedWorkspaces(window,send) {
   const emit=()=>send('browser-state',browserState());
   function syncView() {
     if(window.isDestroyed())return;
-    const item=browserCurrent();
+    const item=layout?.mode==='live'?live:browserCurrent();
     const next=layout?.visible&&window.isVisible()&&!window.isMinimized()&&item?.url&&!item.error?item.view:null;
     if(activeView&&activeView!==next){
       activeView.webContents.setAudioMuted(true);
@@ -58,11 +59,50 @@ function createEmbeddedWorkspaces(window,send) {
     activeView=next;
   }
   function setLayout(value) {
-    if(value?.mode!=='browser'){layout=null;syncView();return;}
+    if(!['browser','live'].includes(value?.mode)){layout=null;syncView();closeLive();return;}
     const valid=['x','y','w','h'].every(key=>Number.isFinite(value[key]));
     if(!valid)return;
-    layout={visible:value.visible===true,x:Math.max(0,Math.ceil(value.x)),
+    layout={mode:value.mode,visible:value.visible===true,x:Math.max(0,Math.ceil(value.x)),
       y:Math.max(46,Math.ceil(value.y)),w:Math.max(0,Math.floor(value.w)),h:Math.max(0,Math.floor(value.h))};
+    syncView();
+  }
+  function closeLive() {
+    if(!live)return;
+    const contents=live.view.webContents;
+    live=null;
+    if(!contents.isDestroyed())contents.close();
+  }
+  function openLive(id) {
+    const url=liveURL(id);
+    if(live){
+      const previous=live;
+      live=null;
+      syncView();previous.view.webContents.close();
+    }
+    const view=new WebContentsView({webPreferences:{session:biliSession,sandbox:true,contextIsolation:true,
+      nodeIntegration:false,webSecurity:true}});
+    const contents=view.webContents,item=live={view,url,error:''};
+    contents.setAudioMuted(true);
+    const allowed=target=>webURL(target)?.origin==='https://live.bilibili.com';
+    for(const name of ['will-navigate','will-redirect']){
+      contents.on(name,(event,target)=>{if(!allowed(event.url||target))event.preventDefault();});
+    }
+    contents.setWindowOpenHandler(({url:target})=>{
+      if(allowed(target))contents.loadURL(target).catch(()=>{});
+      return {action:'deny'};
+    });
+    bindKeys(contents);
+    function report(error='') {
+      if(live!==item)return;
+      item.error=error;syncView();
+      send('live-state',{id,loading:contents.isLoading(),error});
+    }
+    contents.on('did-start-loading',()=>report());
+    contents.on('did-stop-loading',()=>report(item.error));
+    contents.on('render-process-gone',()=>report('直播间已停止响应，请刷新重试。'));
+    contents.loadURL(url).catch(error=>{
+      if(error.code!=='ERR_ABORTED')report('暂时无法打开直播间，请刷新重试。');
+    });
     syncView();
   }
   function load(item,url) {
@@ -150,6 +190,7 @@ function createEmbeddedWorkspaces(window,send) {
   }
   for(const event of ['show','hide','minimize','restore','resize'])window.on(event,syncView);
   window.once('closed',()=>{
+    closeLive();
     const pages=[...tabs.values()];
     tabs.clear();
     for(const {view} of pages){
@@ -157,6 +198,6 @@ function createEmbeddedWorkspaces(window,send) {
     }
     library.dispose();
   });
-  return {browser,download:library.download,setLayout};
+  return {browser,download:library.download,setLayout,openLive};
 }
 module.exports={createEmbeddedWorkspaces};

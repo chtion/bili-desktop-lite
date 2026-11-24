@@ -1,7 +1,7 @@
 {
   "name": "bili-desktop-lite",
   "productName": "Bili Desktop Lite",
-  "version": "0.10.8",
+  "version": "0.10.10",
   "description": "An unofficial Bilibili desktop app with a custom interface and day/night themes.",
   "main": "src/main.js",
   "author": "Bili Desktop Lite",

@@ -18,6 +18,7 @@ const {readGitHubCredential}=require('./github-credentials');
 const {version}=require('../package.json');
 const {createSearch}=require('./search');
 const {createEmbeddedWorkspaces}=require('./embedded-workspaces');
+const {liveDirectory,followedLive}=require('./live');
 const {createHongguo,officialURL}=require('./hongguo');
 const {createDramaImports,imported}=require('./drama-imports');
 const SHELL_URL = 'bili-app://shell/';
@@ -151,7 +152,7 @@ async function requestData(method, data = {}) {
       return state;
     }
     case 'update-info': return updates.info();
-    case 'check-update': return updates.check(data.local===true);
+    case 'check-update': return updates.check(data.local===true,data.automatic===true);
     case 'update-release-page': return shell.openExternal(`https://github.com/${repository}/releases/latest`);
     case 'install-update': return updates.install();
     case 'cancel-update': return updates.cancel();
@@ -160,6 +161,9 @@ async function requestData(method, data = {}) {
       const result=preferences.save(data);send('settings-changed',result);return result;
     }
     case 'browser-command': return embeddedWorkspaces.browser(data.action,data.id,data.value);
+    case 'live-directory': return liveDirectory(biliSession);
+    case 'live-following': return followedLive(biliSession);
+    case 'live-room': return embeddedWorkspaces.openLive(data.id);
     case 'browser-download': return embeddedWorkspaces.download(data.action,data.id);
     case 'hongguo': return imported(data.sourceId)?dramaImports.browse(data.method,data):hongguo.request(data.method,data);
     case 'hongguo-official': return shell.openExternal(officialURL(data.seriesId,data.episodeId,data.episodeNumber));
@@ -328,6 +332,7 @@ async function initialize() {
   files.set('/search-ui.js','search-ui.js');
   files.set('/stream-feed.js','stream-feed.js');
   files.set('/extensions-ui.js','extensions-ui.js');
+  files.set('/live-ui.js','live-ui.js');
   files.set('/hongguo-ui.js','hongguo-ui.js');
   files.set('/hongguo-collection.js','hongguo-collection.js');
   files.set('/shortcut-keys.js','shortcut-keys.js');
@@ -354,7 +359,7 @@ async function initialize() {
   });
   mainWindow = new BrowserWindow({ width: 1440, height: 960, minWidth: 720, minHeight: 500, title: 'Bili Lite', backgroundColor: '#f7f8fc', titleBarStyle: 'hidden', titleBarOverlay: { color: '#ffffff', symbolColor: '#333342', height: 46 }, icon: path.join(__dirname, '../assets/icon.png'), show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
   mainWindow.removeMenu();
-  embeddedWorkspaces=createEmbeddedWorkspaces(mainWindow,send);
+  embeddedWorkspaces=createEmbeddedWorkspaces(mainWindow,send,biliSession,bindKeys);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   bindKeys(mainWindow.webContents);

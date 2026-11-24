@@ -62,9 +62,22 @@ test('GitHub release checks share the request and reuse a fresh result',async()=
     calls++;
     return Response.json({tag_name:'v0.10.4'});
   }});
-  await Promise.all([updates.check(),updates.check()]);
+  await Promise.all([updates.check(false,true),updates.check(false,true)]);
   assert.match((await updates.check()).message,/最新/);
   assert.equal(calls,1);
+});
+
+test('startup checks never look up local Git credentials even after checking a private release',async()=>{
+  let credentials=0;
+  const updates=createUpdates({app:{getVersion:()=> '0.10.8'},
+    getCredential:async()=>{credentials++;return 'test-only-token';},
+    fetch:async(_url,{headers})=>headers.Authorization?Response.json({tag_name:'v0.10.8'}):new Response(null,{status:404})});
+  assert.match((await updates.check(false,true)).message,/公开发布/);
+  assert.equal(credentials,0);
+  assert.match((await updates.check()).message,/最新/);
+  assert.equal(credentials,1);
+  assert.match((await updates.check(false,true)).message,/手动检查/);
+  assert.equal(credentials,1);
 });
 
 test('REST rate limits suppress repeated requests until GitHub permits a retry',async()=>{

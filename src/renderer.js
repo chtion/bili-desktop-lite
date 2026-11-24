@@ -206,7 +206,8 @@ async function navigate(name, extra = {}, options = {}) {
   $('search').value = name === 'search' ? route.keyword : '';
   $('workspace').classList.remove('playing'); $('workspace').scrollTop = 0;
   lastScroller = null; $('back-top').hidden = true;
-  document.querySelectorAll('.nav-item').forEach((button) => { button.classList.toggle('active', button.dataset.route === name); button.setAttribute('aria-current', button.dataset.route === name ? 'page' : 'false'); });
+  const navRoute=name==='live-room'?'live':name;
+  document.querySelectorAll('.nav-item').forEach((button) => { button.classList.toggle('active', button.dataset.route === navRoute); button.setAttribute('aria-current', button.dataset.route === navRoute ? 'page' : 'false'); });
   if (['saved', 'history'].includes(name)) { renderLibrary(); return true; }
   if (['following', 'followers'].includes(name)) { peopleBase(); return fetchPeople(); }
   if (['favorites','profile','dynamics'].includes(name)) return loadPersonal();
@@ -217,6 +218,8 @@ async function navigate(name, extra = {}, options = {}) {
   if(name==='swipe'){window.bili.command('play-state',true);$('pin-window').hidden=false;return StreamFeed.mount();}
   if(name==='hongguo')return Hongguo.mount();
   if(name==='browser')return Extensions.mount();
+  if(name==='live')return LiveDirectory.mount({restore:options.restore});
+  if(name==='live-room')return Extensions.mountLive();
   listBase();
   if(name==='home'&&options.restore&&restoreHome())return true;
   return fetchList();
@@ -262,6 +265,8 @@ async function refreshRoute() {
   if(route.name==='swipe'){StreamFeed.reset();navigate('swipe',{},{replace:true});return;}
   if(route.name==='hongguo'){Hongguo.refresh();return;}
   if(route.name==='browser'){Extensions.refresh();return;}
+  if(route.name==='live')return LiveDirectory.mount({refresh:true});
+  if(route.name==='live-room')return Extensions.refreshLive();
   if(route.name==='watch'){watch(route.bvid,{episodeId:route.episodeId,part:route.part,fullscreen:webMode,replace:true});return;}
   refreshing=true;
   document.querySelectorAll('[data-refresh]').forEach(b=>{b.disabled=true;b.classList.add('refreshing');});
@@ -291,6 +296,7 @@ async function updateAccount() {
     document.querySelector('#account .avatar').innerHTML = account.avatar ? `<img src="${esc(image(account.avatar))}" alt="">` : icon('user');
     $('account').title = account.loggedIn ? `${account.name} · 账号信息` : '登录 B站';
     if(previousMid!==account.mid){
+      LiveDirectory.accountChanged();
       homeViews.clear();
       if(previousMid!==undefined){StreamFeed.reset();if(route.name==='swipe')navigate('swipe',{},{replace:true});}
       if(['following','followers','favorites','dynamics','bangumi'].includes(route.name))navigate(route.name);
@@ -410,6 +416,9 @@ document.addEventListener('click', (event) => {
   else if (button.id === 'people-more') fetchPeople(true);
   else if (button.dataset.route) button.dataset.route==='home'?openHome():navigate(button.dataset.route);
   else if (button.dataset.watch) watch(button.dataset.watch);
+  else if (route.name==='live'&&button.hasAttribute('data-live-room')) LiveDirectory.open(button.dataset.liveRoom);
+  else if (route.name==='live'&&button.dataset.liveView) LiveDirectory.select(button.dataset.liveView);
+  else if (route.name==='live'&&button.hasAttribute('data-live-area')) LiveDirectory.filter(button.dataset.liveArea);
   else if (button.dataset.save) toggleSave(button.dataset.save);
   else if (button.hasAttribute('data-category')) navigate(route.name, { category: Number(button.dataset.category) });
   else if (button.hasAttribute('data-refresh')) refreshRoute();

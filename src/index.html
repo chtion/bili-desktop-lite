@@ -24,6 +24,7 @@
       <button data-route="swipe" class="nav-item"><span data-icon="swipe"></span><span>刷视频</span></button>
       <button data-route="ranking" class="nav-item"><span data-icon="fire"></span><span>热门榜单</span></button>
       <button data-route="anime" class="nav-item"><span data-icon="film"></span><span>番剧探索</span></button>
+      <button data-route="live" class="nav-item"><span data-icon="live"></span><span>B 站直播</span></button>
     </nav>
     <span class="nav-label second-label">我的片单</span>
     <nav aria-label="我的片单">
@@ -38,6 +39,7 @@
     </nav>
     </div>
     <div class="sidebar-bottom">
+      <button type="button" id="update-reminder" class="sidebar-settings sidebar-update" hidden><span data-icon="download"></span><span>有可用更新</span></button>
       <button id="settings-button" class="sidebar-settings" aria-label="设置" title="设置"><span data-icon="settings"></span><span>设置</span></button>
       <div class="theme-picker" aria-label="外观主题"><button data-theme-mode="light" title="白天主题" aria-label="白天主题" data-icon="sun"></button><button data-theme-mode="dark" title="夜晚主题" aria-label="夜晚主题" data-icon="moon"></button><button data-theme-mode="system" title="跟随系统" aria-label="跟随系统" data-icon="monitor"></button></div>
       <button id="account" class="account-button" aria-label="账号信息" aria-expanded="false" aria-controls="account-panel"><span class="avatar" data-icon="user"></span><span class="account-copy"><span id="account-name">登录 B站</span><small id="account-caption">登录后查看个人资料</small></span><span class="account-chevron" data-icon="chevrons"></span></button>
@@ -101,6 +103,7 @@
   <script src="search-ui.js"></script>
   <script src="stream-feed.js"></script>
   <script src="extensions-ui.js"></script>
+  <script src="live-ui.js"></script>
   <script src="hongguo-collection.js"></script>
   <script src="hongguo-ui.js"></script>
   <script src="renderer.js"></script>

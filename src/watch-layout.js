@@ -2,7 +2,7 @@
 let webMode=false, rightPanelOpen=true;
 const navigationStack=[];
 let homeBatch=0;
-const routeKey=r=>JSON.stringify([r.name,r.bvid,r.category||0,r.keyword||'',r.order||'',r.folder||0,r.mid||0,r.episodeId||0,r.seasonId||0,r.type||1,r.status||0,r.finish??-1,r.searchType||'all',!!r.index,Object.entries(r.filters||{}).sort()]);
+const routeKey=r=>JSON.stringify([r.name,r.bvid,r.roomId,r.category||0,r.keyword||'',r.order||'',r.folder||0,r.mid||0,r.episodeId||0,r.seasonId||0,r.type||1,r.status||0,r.finish??-1,r.searchType||'all',!!r.index,Object.entries(r.filters||{}).sort()]);
 function rememberRoute(next,replace=false) {
   if(!replace && routeKey(route)!==routeKey(next)){
     navigationStack.push({...route});if(navigationStack.length>60)navigationStack.shift();
@@ -16,7 +16,7 @@ function goBack() {
   if(Hongguo.back())return;
   const target=navigationStack.pop();if(!target)return;
   if(target.name==='watch')watch(target.bvid,{replace:true,part:target.part,episodeId:target.episodeId});
-  else navigate(target.name,target,{replace:true,restore:target.name==='home'});
+  else navigate(target.name,target,{replace:true,restore:['home','live'].includes(target.name)});
 }
 function openHome() {
   if(route.name==='home' && !route.category){refreshRoute();return;}

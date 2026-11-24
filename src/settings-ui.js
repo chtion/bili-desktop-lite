@@ -36,12 +36,12 @@ function populateSettings() {
   }
 }
 function settingsError(message) {$('settings-error').hidden=!message;$('settings-error').textContent=message;}
-async function openSettings() {
+async function openSettings(focusId='close-settings') {
   settingsFocus=document.activeElement;closeAccount(false);
   try {await preferencesReady;const data=await window.bili.api('settings');updatePreferences(data);populateSettings();settingsError(data.shortcutErrors.join(' '));}
   catch(e){populateSettings();settingsError(e.message);}
   if(!$('settings-dialog').open)$('settings-dialog').showModal();
-  updateBackButton();$('close-settings').focus();
+  updateBackButton();$(focusId).focus();
 }
 function closeSettings() {
   if(!$('settings-dialog').open)return;
@@ -51,7 +51,7 @@ function closeSettings() {
 }
 function initSettings() {
   preferencesReady=window.bili.api('settings').then(data=>{updatePreferences(data);return data;}).catch(e=>{toast(e.message);return null;});
-  $('settings-button').addEventListener('click',openSettings);
+  $('settings-button').addEventListener('click',()=>openSettings());
   $('close-settings').addEventListener('click',closeSettings);
   $('settings-dialog').addEventListener('cancel',event=>{event.preventDefault();closeSettings();});
   $('settings-dialog').addEventListener('click',event=>{if(event.target===$('settings-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeSettings();}});
@@ -102,20 +102,31 @@ function initUpdates() {
   const lock=locked=>ids.forEach(id=>{$(id).disabled=locked;});
   const status=message=>{$('update-status').textContent=message;};
   const progress=$('update-progress'),cancel=$('cancel-update'),notes=$('update-notes');
+  const reminder=$('update-reminder');
   const size=bytes=>`${(bytes/1048576).toFixed(1)} MB`;
   window.bili.api('update-info').then(({current})=>{$('current-version').textContent=`v${current}`;}).catch(()=>{});
-  async function check(local) {
-    lock(true);$('install-update').hidden=true;notes.hidden=true;notes.open=false;status('正在检查更新…');
+  function showOffer(offer) {
+    reminder.hidden=!offer;
+    $('install-update').hidden=!offer;
+    if(offer){
+      const label=`有可用更新 v${offer.version}`;
+      reminder.lastElementChild.textContent=label;
+      reminder.title=label;reminder.setAttribute('aria-label',label);
+    }
+  }
+  async function check(local,automatic=false) {
+    lock(true);showOffer(null);notes.hidden=true;notes.open=false;status('正在检查更新…');
     try {
-      const data=await window.bili.api('check-update',{local});
+      const data=await window.bili.api('check-update',{local,automatic});
       status(data.offer?`${data.message} · ${data.offer.source} · ${size(data.offer.size)}`:data.message);
       notes.querySelector('p').textContent=data.offer?.notes||'';
       notes.hidden=!data.offer?.notes;
-      $('install-update').hidden=!data.offer;
+      showOffer(data.offer);
     } catch(error){status(error.message+' 可从发布文件夹检查。');}
     finally{lock(false);}
   }
   $('check-update').addEventListener('click',()=>check(false));
+  reminder.addEventListener('click',()=>openSettings('install-update'));
   $('update-release-page').addEventListener('click',()=>window.bili.api('update-release-page').catch(error=>status(error.message)));
   $('update-folder').addEventListener('click',()=>check(true));
   window.bili.onEvent((type,data)=>{
@@ -135,8 +146,10 @@ function initUpdates() {
   });
   cancel.addEventListener('click',()=>{cancel.disabled=true;window.bili.api('cancel-update').catch(error=>status(error.message));});
   $('install-update').addEventListener('click',async()=>{
+    reminder.hidden=true;
     lock(true);cancel.disabled=false;status('正在准备更新…');
     try {NativePlayer.flushProgress();await window.bili.api('install-update');}
-    catch(error){status(error.message);progress.hidden=true;cancel.hidden=true;lock(false);}
+    catch(error){status(error.message);progress.hidden=true;cancel.hidden=true;reminder.hidden=false;lock(false);}
   });
+  void check(false,true);
 }

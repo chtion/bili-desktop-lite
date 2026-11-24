@@ -160,20 +160,43 @@ const Extensions=(()=>{
     renderBrowser();renderDownloads();browser('state');download('list');
   }
 
-  function mount() {
-    mode='browser';
+  function mountPage(kind,markup) {
+    mode=kind;
     $('workspace').classList.add('embedded-workspace');
-    $('content').innerHTML=browserMarkup();
+    $('content').innerHTML=markup;
     observer=new ResizeObserver(layout);
     observer.observe($('extension-slot'));
     layout();
+  }
+  function mount() {
+    mountPage('browser',browserMarkup());
     bindBrowser();
     return true;
+  }
+  async function refreshLive() {
+    const turn=epoch;
+    setTabNotice('正在打开直播间…');
+    try {await window.bili.api('live-room',{id:route.roomId});}
+    catch(error){if(turn===epoch&&mode==='live')setTabNotice(error.message);}
+  }
+  function mountLive() {
+    mountPage('live',`<section class="extension-frame live-room-frame" aria-label="B 站直播">
+      <div class="live-room-toolbar"><button type="button" class="icon-button live-room-back" aria-label="返回直播列表" title="返回直播列表" data-back>${icon('back')}</button>
+        <div class="live-room-copy"><strong title="${esc(route.roomTitle)}">${esc(route.roomTitle)}</strong>
+          ${route.roomAuthor?`<small>${esc(route.roomAuthor)}</small>`:''}</div>
+        <button type="button" class="icon-button" data-refresh aria-label="刷新直播间" title="刷新直播间">${icon('refresh')}</button></div>
+      <div class="extension-body"><div class="extension-page"><div id="extension-slot" hidden></div>
+        <div id="extension-notice" class="extension-notice" role="status"></div></div></div></section>`);
+    return refreshLive();
   }
   function event(type,value) {
     if(type==='browser-state'){browserState=value;renderBrowser();return true;}
     if(type==='browser-downloads'){downloads=value;renderDownloads();return true;}
     if(type==='browser-library-error'){toast(value);return true;}
+    if(type==='live-state'){
+      if(mode==='live'&&route.roomId===value.id)setTabNotice(value.error||(value.loading?'正在打开直播间…':''));
+      return true;
+    }
     if(mode==='browser'&&['focus-address','focus-search'].includes(type)){focusAddress();return true;}
     if(type==='resize')layout();
     return false;
@@ -190,5 +213,5 @@ const Extensions=(()=>{
       requestAnimationFrame(frame);
     });
   });
-  return {mount,leave,event,refresh:()=>browser('refresh')};
+  return {mount,mountLive,leave,event,refresh:()=>browser('refresh'),refreshLive};
 })();
